@@ -1,0 +1,9 @@
+__pycache__/
+.vscode/
+.ipynb_checkpoints/
+**/.DS_Store
+run_hpc_private.slurm
+.env
+*brain*
+data_prep/plots-of-masks-w-rois-tcga-crc-512x512
+data_prep/**.ipynb
