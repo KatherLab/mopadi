@@ -1,3 +1,8 @@
+# Code snippets sourced from the Official implementation of Diffusion Autoencoders by Konpat Preechakul
+# with modifications by Laura Zigutyte and Tim Lenz
+# Original Source: https://github.com/phizaz/diffae
+# License: MIT
+
 from model.unet import ScaleAt
 from model.latentnet import *
 from diffusion.resample import UniformSampler
@@ -14,6 +19,7 @@ from model import *
 from configs.choices import *
 from multiprocessing import get_context
 import os
+import shutil
 from torch.utils.data.distributed import DistributedSampler
 from dotenv import load_dotenv
 
@@ -36,6 +42,7 @@ class PretrainConfig(BaseConfig):
 class TrainConfig(BaseConfig):
     # random seed
     seed: int = 0
+    linear: bool = True
     train_mode: TrainMode = TrainMode.diffusion
     train_cond0_prob: float = 0
     train_pred_xstart_detach: bool = True
@@ -266,9 +273,8 @@ class TrainConfig(BaseConfig):
         return self._make_latent_diffusion_conf(T=self.latent_T_eval)
 
     def make_dataset(self, path=None, **kwargs):
-        if self.data_name == 'texture100k':
-            return TextureLMDB(path=path or self.data_path
-                                   **kwargs)
+        if self.data_name == 'texture':
+            return TextureLMDB(path=path or self.data_path, **kwargs)
         elif self.data_name == 'tcga_crc':
             return TcgaCRCwoMetadata(path=path or self.data_path, **kwargs)
         elif self.data_name == 'tcga_crc_512':
