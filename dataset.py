@@ -21,9 +21,9 @@ class ImagesBaseDataset(Dataset):
     def __init__(
         self,
         folder,
-        exts=["jpg", "tiff", "tif"],
+        exts=["jpg", "tiff", "tif", "png"],
         transform=None,
-        do_augment: bool = True,
+        do_augment: bool = False,
         do_transform: bool = True,
         do_normalize: bool = True,
     ):
@@ -70,7 +70,7 @@ class ImagesBaseDataset(Dataset):
     
 class TCGADataset(ImagesBaseDataset):
     """
-    def __init__(self, images_dir, path_to_gt_table=None, sample=0, transform=None):
+    def __init__(self, images_dir, path_to_gt_table=None, transform=None):
         super().__init__(images_dir, transform=transform)
         self.transform = transform
         self.images_dir = images_dir
@@ -150,27 +150,32 @@ class TCGADataset(ImagesBaseDataset):
     
 
 class TextureDataset(ImagesBaseDataset):
-    def __init__(self, images_dir, path_to_gt_table, sample=0, transform=None):
-        super().__init__(images_dir, transform=transform)
-        self.transform = transform
+    def __init__(self, images_dir, path_to_gt_table, transform=None, do_augment=False, do_transform=True, do_normalize=True):
+        super().__init__(images_dir, transform=transform, do_augment=do_augment, do_transform=do_transform, do_normalize=do_normalize)
         self.images_dir = images_dir
         self.df = pd.read_csv(path_to_gt_table)
         self.df = self.df.set_index('FILENAME')
-        self.PRED_LABEL = self.df.columns
+        try:
+            self.df.drop(columns=['Unnamed: 0'], inplace=True)
+        except:
+            pass
+        self.PRED_LABEL = sorted(self.df.columns)
+        print('The following order should match the order the Clf was trained with:')
+        print(self.PRED_LABEL)
 
     def __getitem__(self, idx):
-        path = os.path.join(self.folder, self.df.index[idx].split("-")[0], self.df.index[idx])
+        path = os.path.join(self.images_dir, self.df.index[idx].split("-")[0], self.df.index[idx])
         img = Image.open(path).convert('RGB')
         pred_label = self.get_pred_label(idx)
 
         if self.transform:
             img = self.transform(img)
 
-        return (img, pred_label)
+        return {'img': img, 'labels': pred_label, 'gt': self.df.index[idx].split("-")[0], 'filename': self.df.index[idx]}
     
 
 class JapanDataset(ImagesBaseDataset):
-    def __init__(self, images_dir, path_to_gt_table, sample=0, transform=None):
+    def __init__(self, images_dir, path_to_gt_table, transform=None):
         super().__init__(images_dir, transform=transform)
         self.transform = transform
         self.images_dir = images_dir
@@ -189,7 +194,7 @@ class JapanDataset(ImagesBaseDataset):
 
 
 class BrainDataset(ImagesBaseDataset):
-    def __init__(self, images_dir, path_to_gt_table, sample=0, transform=None):
+    def __init__(self, images_dir, path_to_gt_table, transform=None):
         super().__init__(images_dir, transform=transform)
         self.transform = transform
         self.images_dir = images_dir

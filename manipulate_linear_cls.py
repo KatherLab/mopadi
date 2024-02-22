@@ -1,4 +1,4 @@
-from exp_linear_cls import ClsModel
+from train_linear_cls import ClsModel
 from torchvision import transforms
 import torch
 from configs.templates import *
@@ -28,11 +28,6 @@ class ImageManipulator:
         else:
             print('Target classes could not be determined.')
         print(f"Valid target classes: {self.VALID_TARGET_CLASSES}")
-    
-    def load_data(self, image_folder):
-        print(f"Number of images found in the given image folder: {len(os.listdir(image_folder))}")
-        self.image_dataset = ImageDataset(image_folder, do_augment=False, do_normalize=True)
-        return self.image_dataset
 
     def load_model(self, model_config, checkpoint_path):
         model = LitModel(model_config)
@@ -66,6 +61,9 @@ class ImageManipulator:
 
         batch = self.image_dataset[image_index]["img"][None]
 
+        if not os.path.exists(save_path):
+            os.makedirs(save_path, exist_ok=True)
+
         # Image encoding and manipulation steps
         results = {}
         semantic_latent = self.model.encode(batch.to(self.device))
@@ -75,7 +73,7 @@ class ImageManipulator:
         results["semantic latent"] = semantic_latent
         results["stochastic latent"] = stochastic_latent
 
-        if self.cls_config.manipulate_mode == 'texture_all':
+        if self.cls_config.manipulate_mode == 'texture':
             cls_id = TextureAttrDataset.cls_to_id[target_class]
         elif self.cls_config.manipulate_mode == 'tcga_crc_msi':
             cls_id = TcgaCrcMsiAttrDataset.cls_to_id[target_class]
@@ -112,18 +110,18 @@ class ImageManipulator:
 
         # Save the original image
         try:
-            out_path = os.path.join(save_path, self.image_dataset[image_index]["filename"].split(".png")[0] + "_original.png")
+            out_path = os.path.join(save_path, self.image_dataset[image_index]["filename"].split(".")[0] + "_original.png")
         except:
             out_path = os.path.join(save_path,  f"original_{image_index}.png")
         original_img_rgb = convert2rgb(self.image_dataset[image_index]["img"])
         results["original image"] = original_img_rgb
         results["original image path"] = out_path
         save_image(original_img_rgb, str(out_path))
-        print(f"Original image saved to: {out_path}")
+        #print(f"Original image saved to: {out_path}")
 
         # Save and return manipulated image path
         try:
-            save_manip_path = os.path.join(save_path, self.image_dataset[image_index]["filename"].split(".png")[0] + f"_manipulated_to_{target_class}_amplitude_{manipulation_amplitude}.png")
+            save_manip_path = os.path.join(save_path, self.image_dataset[image_index]["filename"].split(".")[0] + f"_manipulated_to_{target_class}_amplitude_{manipulation_amplitude}.png")
         except:
             save_manip_path = os.path.join(save_path, f"Image_{image_index}_manipulated_to_{target_class}_amplitude_{manipulation_amplitude}.png")
 
@@ -131,7 +129,7 @@ class ImageManipulator:
         results["manipulated image"] = manipulated_img_rgb
         results["manipulated image path"] = save_manip_path
         self.save_image(manipulated_img_rgb, save_manip_path)
-        print(f"Manipulated image saved to: {save_manip_path}")
+        #print(f"Manipulated image saved to: {save_manip_path}")
         return results
 
     def save_image(self, image_tensor, save_path):

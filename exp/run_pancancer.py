@@ -1,8 +1,8 @@
 from configs.templates import *
 from configs.templates_latent import *
 from configs.templates_cls import *
-from experiment import *
-from exp_linear_cls import *
+from train_diff_autoenc import *
+from train_linear_cls import *
 
 if __name__ == '__main__':
     # NOTE: this requires 8 (40Gb) or 4 (80Gb) x A100

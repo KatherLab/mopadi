@@ -6,7 +6,7 @@ from configs.templates_cls import *
 
 class ImageEncoder:
 
-    def __init__(self, autoenc_config, autoenc_path, dataset=None, device="cuda:1"):
+    def __init__(self, autoenc_config, autoenc_path, dataset=None, device="cuda:0"):
         self.device = device
         self.dataset = dataset
         self.model = self._load_model(autoenc_config, autoenc_path)
@@ -37,6 +37,10 @@ class ImageEncoder:
         # save_image(convert2rgb(image), str(out_path))
 
         return cond, xT
+
+    def sample_unconditional(self, nr_samples, T=20, T_latent=200):
+        imgs = self.model.sample(nr_samples, device=self.device, T=T, T_latent=T_latent)
+        return imgs
 
     def decode_image(self, xT, cond, T=20):
         return self.model.render(xT, cond, T)

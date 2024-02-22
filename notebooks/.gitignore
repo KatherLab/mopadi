@@ -1,2 +1,6 @@
 *
+!texture_dataset_visualization.ipynb
+!unconditional_sampling_texture.ipynb
+!unconditional_sampling_TCGA-CRC.ipynb
+!manipulate-texture.ipynb
 !.gitignore
