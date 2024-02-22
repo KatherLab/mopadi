@@ -52,17 +52,6 @@ class TrainMode(Enum):
         ]
 
 
-class ManipulateMode(Enum):
-    texture_all = 'texture_all'
-    tcga_crc_msi = 'tcga_crc_msi'
-    tcga_crc_braf = 'tcga_crc_braf'
-    tcga_crc_msi_512 = 'tcga_crc_msi_512'
-    brain = 'brain'
-    japan = 'japan'
-    lung = 'lung'
-
-
-
 class ModelType(Enum):
     """
     Kinds of the backbone models

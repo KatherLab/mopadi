@@ -17,13 +17,13 @@ class ImageManipulator:
         self.classifier = self.load_cls_model(cls_config, cls_path)
         print("Both models loaded successfully.")
 
-        if self.cls_config.manipulate_mode in [ManipulateMode.texture_all]:
+        if self.cls_config.manipulate_mode == 'texture':
             self.VALID_TARGET_CLASSES = TextureAttrDataset.id_to_cls
-        elif self.cls_config.manipulate_mode in [ManipulateMode.tcga_crc_msi]:
+        elif self.cls_config.manipulate_mode == 'tcga_crc_msi':
             self.VALID_TARGET_CLASSES = TcgaCrcMsiAttrDataset.id_to_cls
-        elif self.cls_config.manipulate_mode in [ManipulateMode.tcga_crc_braf]:
+        elif self.cls_config.manipulate_mode == 'tcga_crc_braf':
             self.VALID_TARGET_CLASSES = TCGACRCBRAFAttrDataset.id_to_cls
-        elif self.cls_config.manipulate_mode in [ManipulateMode.brain]:
+        elif self.cls_config.manipulate_mode == 'brain':
             self.VALID_TARGET_CLASSES = BrainAttrDataset.id_to_cls
         else:
             print('Target classes could not be determined.')
@@ -75,13 +75,13 @@ class ImageManipulator:
         results["semantic latent"] = semantic_latent
         results["stochastic latent"] = stochastic_latent
 
-        if self.cls_config.manipulate_mode in [ManipulateMode.texture_all]:
+        if self.cls_config.manipulate_mode == 'texture_all':
             cls_id = TextureAttrDataset.cls_to_id[target_class]
-        elif self.cls_config.manipulate_mode in [ManipulateMode.tcga_crc_msi]:
+        elif self.cls_config.manipulate_mode == 'tcga_crc_msi':
             cls_id = TcgaCrcMsiAttrDataset.cls_to_id[target_class]
-        elif self.cls_config.manipulate_mode in [ManipulateMode.tcga_crc_braf]:
+        elif self.cls_config.manipulate_mode == 'tcga_crc_braf':
             cls_id = TCGACRCBRAFAttrDataset.cls_to_id[target_class]
-        elif self.cls_config.manipulate_mode in [ManipulateMode.brain]:
+        elif self.cls_config.manipulate_mode == 'brain':
             cls_id = BrainAttrDataset.cls_to_id[target_class]
 
         if not self.cls_config.linear:
