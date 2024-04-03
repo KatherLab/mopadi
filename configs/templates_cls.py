@@ -72,6 +72,22 @@ def tcga_crc_autoenc_512_cls():
     conf.name = "tcga_crc_512_autoenc_cls"
     return conf
 
+def tcga_brca_autoenc_512_cls():
+    conf = tcga_brca_autoenc()
+    conf.train_mode = TrainMode.manipulate
+    conf.manipulate_mode = ManipulateMode.tcga_brca_all
+    conf.manipulate_znormalize = True
+    conf.latent_infer_path = f"{ws_path}/mopadi/{tcga_brca_autoenc().name}/latent.pkl"
+    conf.batch_size = 32 
+    conf.lr = 1e-3
+    conf.total_samples = 1_500_000
+    # use the pretraining trick instead of continuing trick
+    conf.pretrain = PretrainConfig(
+        '200M',
+        f'{ws_path}/mopadi/{tcga_brca_autoenc().name}/last.ckpt',
+    )
+    conf.name = 'tcga_brca_512_autoenc_cls'
+    return conf
 
 def brain_autoenc_cls():
     conf = brain_autoenc()
