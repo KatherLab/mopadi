@@ -38,10 +38,9 @@ class Classifier(nn.Module):
             nn.Dropout(),
             nn.Linear(dim,num_classes),
             )                        # empirical evidence showed that a non-linear head can improve performance
-        #nn.init.kaiming_normal_(self.classifier.weight)
         
     def forward(self,x):
-        x = self.pool(x).max(1).values    # Taking the max here probably makes more sense
+        x = self.pool(x).max(1).values    # Taking the max here probably makes more sense? TBD
         return self.classifier(x)
     
 class FeatDataset(Dataset):
@@ -70,18 +69,11 @@ class FeatDataset(Dataset):
                 for i in indices]
 
     def get_nr_pos(self, indices=None):
-        #return len(self.df[self.df[self.target_label]==pos_label].values)
-        #targets = np.array([self.target_dict[self.df[self.df.PATIENT==feat_path.split("/")[-1].split(".h5")[0]][self.target_label].values[0]]
-        #            for feat_path in self.feat_list])
-        #return len(targets[targets==1])
         indices = indices if indices is not None else self.indices
         targets = np.array(self.get_targets(indices))
         return np.sum(targets == 1)
 
     def get_nr_neg(self, indices=None):
-        #targets = np.array([self.target_dict[self.df[self.df.PATIENT==feat_path.split("/")[-1].split(".h5")[0]][self.target_label].values[0]]
-        #            for feat_path in self.feat_list])
-        #return len(targets[targets==0])
         indices = indices if indices is not None else self.indices
         targets = np.array(self.get_targets(indices))
         return np.sum(targets == 0)

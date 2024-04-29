@@ -48,7 +48,7 @@ class ImageManipulator:
         normalized_class_direction = F.normalize(feats.grad, dim=1)
         
         normalized_feats = normalize(feats, state, self.device)
-        norm_man_amp = man_amp * math.sqrt(512)
+        norm_man_amp = man_amp * math.sqrt(feats.shape[-1])
         norm_man_feats = normalized_feats + norm_man_amp * normalized_class_direction
         
         return denormalize(norm_man_feats, state, self.device)

@@ -4,6 +4,20 @@ from dotenv import load_dotenv
 load_dotenv()
 ws_path = os.getenv("WORKSPACE_PATH")
 
+def lung_mil():
+    conf = MILconfig()
+    conf.nr_feats = 512
+    conf.target_label = "Type"
+    conf.target_dict = {"Lung_squamous_cell_carcinoma": 0, 
+                        "Lung_adenocarcinoma": 1}
+    return conf
+
+def msi_mil():
+    conf = MILconfig()    
+    conf.nr_feats = 512
+    conf.target_label = "isMSIH"
+    conf.target_dict = {"nonMSIH": 0, "MSIH": 1}
+    return conf
 
 def texture100k_autoenc_cls():
     conf = texture100k_autoenc()
