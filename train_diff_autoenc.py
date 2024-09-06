@@ -29,6 +29,8 @@ from lmdb_writer import *
 from metrics import *
 from renderer import *
 
+torch.set_float32_matmul_precision('medium')
+
 
 class LitModel(pl.LightningModule):
     def __init__(self, conf: TrainConfig):
@@ -884,7 +886,7 @@ def train(conf: TrainConfig, gpus, nodes=1, mode: str = 'train'):
     print('ckpt path:', checkpoint_path)
     if os.path.exists(checkpoint_path):
         resume = checkpoint_path
-        print('resume!')
+        print(f'resuming training, model loaded from {resume}!')
     else:
         if conf.continue_from is not None:
             # continue from a checkpoint
@@ -925,7 +927,7 @@ def train(conf: TrainConfig, gpus, nodes=1, mode: str = 'train'):
         strategy=strategy,
         num_nodes=nodes,
         accelerator=accelerator,
-        precision=16 if conf.fp16 else 32,
+        precision="16-mixed" if conf.fp16 else 32,
         callbacks=[
             checkpoint,
             LearningRateMonitor(),
@@ -939,7 +941,7 @@ def train(conf: TrainConfig, gpus, nodes=1, mode: str = 'train'):
     )
 
     if mode == 'train':
-        trainer.fit(model)
+        trainer.fit(model, ckpt_path=resume)
     elif mode == 'eval':
         # load the latest checkpoint
         # perform lpips
