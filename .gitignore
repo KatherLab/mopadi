@@ -7,3 +7,5 @@ run_hpc_private.slurm
 *brain*
 data_prep/plots-of-masks-w-rois-tcga-crc-512x512
 data_prep/**.ipynb
+.DS_Store?
+._*
