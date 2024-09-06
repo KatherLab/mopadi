@@ -79,6 +79,7 @@ def adamw_weight_decay(conf: TrainConfig):
     conf.weight_decay = 0.01
     return conf
 
+
 def texture100k_autoenc_latent():
     conf = pretrain_texture100k_autoenc()
     conf = latent_diffusion128_config(conf)
@@ -169,4 +170,20 @@ def pancancer_autoenc_latent():
     conf.eval_every_samples = 200_000_000
     conf.sample_every_samples = 4_000_000
     conf.name = 'pancancer_latent'
+    return conf
+
+
+def brca_autoenc_latent():
+    conf = pretrain_brca_autoenc()
+    conf = latent_diffusion128_config(conf)
+    conf = latent_mlp_2048_norm_10layers(conf)
+    conf = latent_256_batch_size(conf)
+    conf = adamw_weight_decay(conf)
+    conf.total_samples = 130_000_000
+    conf.latent_loss_type = LossType.l1
+    conf.latent_beta_scheduler = 'const0.008'
+    conf.eval_ema_every_samples = 200_000_000
+    conf.eval_every_samples = 200_000_000
+    conf.sample_every_samples = 4_000_000
+    conf.name = 'brca_latent'
     return conf

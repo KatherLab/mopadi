@@ -1,4 +1,4 @@
-from experiment import *
+from train_diff_autoenc import *
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -103,7 +103,27 @@ def tcga_crc_autoenc():
 def tcga_crc_512_autoenc():
     conf = autoenc_base()
     conf.data_name = 'tcga_crc_512'
-    conf.base_dir = f'{ws_path}/mopadi/checkpoints/tcga_crc_512x512/tcga_crc_512_autoenc'
+    conf.base_dir = f'{ws_path}/mopadi/checkpoints/crc/tcga_crc_512_autoenc'
+    conf.warmup = 0
+    conf.total_samples = 70_000_000
+    conf.sample_size = 16
+    conf.img_size = 512
+    conf.batch_size = 16
+    conf.batch_size_eval = 16
+    conf.net_ch = 128
+    conf.net_ch_mult = (1, 1, 2, 2, 4, 4)
+    conf.net_enc_channel_mult = (1, 1, 2, 2, 4, 4, 4)
+    conf.eval_every_samples = 1_000_000
+    conf.eval_ema_every_samples = 1_000_000
+    # conf.scale_up_gpus(2)
+    conf.make_model_conf()
+    return conf
+
+
+def tcga_brca_autoenc():
+    conf = autoenc_base()
+    conf.data_name = 'tcga_brca_512'
+    conf.base_dir = f'{ws_path}/mopadi/checkpoints/brca/autoenc'
     conf.warmup = 0
     conf.total_samples = 70_000_000
     conf.sample_size = 16
@@ -158,13 +178,13 @@ def brain_autoenc():
 
 def pancancer_autoenc():
     conf = autoenc_base()
-    conf.data_name = 'japan'
-    conf.base_dir = f'{ws_path}/mopadi/checkpoints/pancancer'
+    conf.data_name = 'pancancer'
+    conf.base_dir = f'/mnt/bulk-dgx/laura/mopadi/checkpoints/pancancer'
     conf.warmup = 0
     conf.total_samples = 200_000_000
     conf.img_size = 256
-    conf.batch_size = 64
-    conf.batch_size_eval = 64
+    conf.batch_size = 48  # had to reduce due to one broken gpu on dgx
+    conf.batch_size_eval = 48  # had to reduce due to one broken gpu on dgx
     conf.net_ch = 128
     conf.net_ch_mult = (1, 1, 2, 2, 4, 4)
     conf.net_enc_channel_mult = (1, 1, 2, 2, 4, 4, 4)
@@ -178,9 +198,9 @@ def pretrain_pancancer_autoenc():
     conf = pancancer_autoenc()
     conf.pretrain = PretrainConfig(
         name='Pancancer',
-        path=f'{ws_path}/mopadi/checkpoints/pancancer/last.ckpt',
+        path=f'/mnt/bulk-dgx/laura/mopadi/checkpoints/pancancer/last.ckpt',
     )
-    conf.latent_infer_path = f'{ws_path}/mopadi/checkpoints/pancancer/latent.pkl'
+    conf.latent_infer_path = f'/mnt/bulk-dgx/laura/mopadi/checkpoints/pancancer/latent.pkl'
     return conf
 
 
@@ -207,6 +227,7 @@ def pretrain_brain_autoenc():
 def pretrain_tcga_crc_autoenc():
     conf = tcga_crc_autoenc()
     conf.pretrain = PretrainConfig(
+        name="TCGA-CRC-224",
         path=f'{ws_path}/mopadi/checkpoints/tcga_crc_224x224/last.ckpt',
     )
     conf.latent_infer_path = f'{ws_path}/mopadi/checkpoints/tcga_crc_224x224/latent.pkl'
@@ -217,9 +238,9 @@ def pretrain_tcga_crc_512_autoenc():
     conf = tcga_crc_512_autoenc()
     conf.pretrain = PretrainConfig(
         name='TCGA-CRC-512',
-        path=f'{ws_path}/mopadi/checkpoints/tcga_crc_512x512/tcga_crc_512_autoenc/last.ckpt',
+        path=f'{ws_path}/mopadi/checkpoints/crc/tcga_crc_512_autoenc/last.ckpt',
     )
-    conf.latent_infer_path = f'{ws_path}/mopadi/checkpoints/tcga_crc_512x512/latent.pkl'
+    conf.latent_infer_path = f'{ws_path}/mopadi/checkpoints/crc/tcga_crc_512_autoenc/latent.pkl'
     return conf
 
 
@@ -227,17 +248,17 @@ def pretrain_pancancer_autoenc():
     conf = pancancer_autoenc()
     conf.pretrain = PretrainConfig(
         name='PanCancer',
-        path=f'{ws_path}/mopadi/checkpoints/pancancer/last.ckpt',
+        path=f'{ws_path}/mopadi/checkpoints/pancancer/autoenc/last.ckpt',
     )
-    conf.latent_infer_path = f'{ws_path}/mopadi/checkpoints/pancancer/latent.pkl'
+    conf.latent_infer_path = f'{ws_path}/mopadi/checkpoints/pancancer/autoenc/latent.pkl'
     return conf
 
 
-def pretrain_tcga_brca_512_autoenc():
-    conf = tcga_brca_512_autoenc()
+def pretrain_brca_autoenc():
+    conf = tcga_brca_autoenc()
     conf.pretrain = PretrainConfig(
-        name='TCGA-BRCA-512',
-        path=f'{ws_path}/mopadi/checkpoints/brca/last.ckpt',
+        name='TCGA-BRCA',
+        path=f'{ws_path}/mopadi/checkpoints/brca/autoenc/last.ckpt',
     )
-    conf.latent_infer_path = f'{ws_path}/mopadi/checkpoints/brca/latent.pkl'
+    conf.latent_infer_path = f'{ws_path}/mopadi/checkpoints/brca/autoenc/latent.pkl'
     return conf

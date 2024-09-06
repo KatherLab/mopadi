@@ -27,9 +27,9 @@ load_dotenv()
 ws_path = os.getenv("WORKSPACE_PATH")
 
 data_paths = {
-    'tcga_crc_msi_512': os.path.join(ws_path, 'datasets/tcga/tcga_crc_512.lmdb'),
-    'japan': os.path.join(ws_path, 'datasets/japan/japan-lmdb'),
-    'tcga_brca_512': os.path.expanduser('dataset/tcga/tcga-brca-512.lmdb'),
+    'tcga_crc_512': os.path.join(ws_path, 'mopadi/datasets/tcga/crc/tcga_crc_512_lmdb'),
+    'tcga_brca_512': os.path.join(ws_path, 'mopadi/datasets/brca/tcga/tcga-brca-512.lmdb'),
+    'pancancer': '/mnt/bulk-dgx/laura/mopadi/datasets/japan-lmdb-train-new',
 }
 
 
@@ -38,6 +38,21 @@ class PretrainConfig(BaseConfig):
     name: str
     path: str
 
+@dataclass
+class MILconfig(BaseConfig):
+    target_label: str = ""
+    target_dict: dict = None
+    dim: int = 512
+    num_heads: int = 8
+    num_seeds: int = 4
+    num_classes: int = 2
+    nr_feats: int = 512
+    nr_top_tiles: int = 15
+    num_epochs: int = 300
+    lr: float = 1e-4
+    batch_size: int = 16
+    num_workers: int = 8
+    es: int = 20
 
 @dataclass
 class TrainConfig(BaseConfig):
@@ -49,7 +64,7 @@ class TrainConfig(BaseConfig):
     train_pred_xstart_detach: bool = True
     train_interpolate_prob: float = 0
     train_interpolate_img: bool = False
-    manipulate_mode: ManipulateMode = ManipulateMode.texture_all
+    manipulate_mode: str = ''
     manipulate_cls: str = None
     manipulate_shots: int = None
     manipulate_loss: ManipulateLossType = ManipulateLossType.bce
@@ -131,7 +146,7 @@ class TrainConfig(BaseConfig):
     # number of resblocks for the UNET
     net_num_input_res_blocks: int = None
     net_enc_num_cls: int = None
-    num_workers: int = 4
+    num_workers: int = 20
     parallel: bool = False
     postfix: str = ''
     sample_size: int = 64
@@ -274,15 +289,18 @@ class TrainConfig(BaseConfig):
         return self._make_latent_diffusion_conf(T=self.latent_T_eval)
 
     def make_dataset(self, path=None, **kwargs):
+        print(f"Used dataset: {self.data_name}, {path} or {self.data_path}")
         if self.data_name == 'texture':
             return TextureLMDB(path=path or self.data_path, **kwargs)
         elif self.data_name == 'tcga_crc':
             return TcgaCRCwoMetadata(path=path or self.data_path, **kwargs)
         elif self.data_name == 'tcga_crc_512':
             return TcgaCRCwoMetadata(path=path or self.data_path, **kwargs)
+        elif self.data_name == 'tcga_brca_512':
+            return TcgaBRCA512lmdbwoMetadata(path=path or self.data_path, **kwargs)
         elif self.data_name == 'brain':
             return BrainLmdb(path=path or self.data_path, **kwargs)
-        elif self.data_name == 'japan':
+        elif self.data_name == 'pancancer':
             return PanCancerLmdb(path=path or self.data_path, **kwargs)
         elif self.data_name == 'tcga_brca_512':
             return TcgaBRCA512lmdbwoMetadata(path=path or self.data_path,
