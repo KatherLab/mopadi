@@ -119,6 +119,24 @@ def tcga_crc_512_autoenc():
     conf.make_model_conf()
     return conf
 
+def tcga_brca_512_autoenc():
+    conf = autoenc_base()
+    conf.data_name = 'tcga_brca_512'
+    conf.base_dir = f'{ws_path}/mopadi/checkpoints/brca'
+    conf.warmup = 0
+    conf.total_samples = 100_000_000
+    conf.sample_size = 16
+    conf.img_size = 512
+    conf.batch_size = 16
+    conf.batch_size_eval = 16
+    conf.net_ch = 128
+    conf.net_ch_mult = (1, 1, 2, 2, 4, 4)
+    conf.net_enc_channel_mult = (1, 1, 2, 2, 4, 4, 4)
+    conf.eval_every_samples = 1_000_000
+    conf.eval_ema_every_samples = 1_000_000
+    # conf.scale_up_gpus(2)
+    conf.make_model_conf()
+    return conf
 
 def brain_autoenc():
     conf = autoenc_base()
@@ -212,4 +230,14 @@ def pretrain_pancancer_autoenc():
         path=f'{ws_path}/mopadi/checkpoints/pancancer/last.ckpt',
     )
     conf.latent_infer_path = f'{ws_path}/mopadi/checkpoints/pancancer/latent.pkl'
+    return conf
+
+
+def pretrain_tcga_brca_512_autoenc():
+    conf = tcga_brca_512_autoenc()
+    conf.pretrain = PretrainConfig(
+        name='TCGA-BRCA-512',
+        path=f'{ws_path}/mopadi/checkpoints/brca/last.ckpt',
+    )
+    conf.latent_infer_path = f'{ws_path}/mopadi/checkpoints/brca/latent.pkl'
     return conf

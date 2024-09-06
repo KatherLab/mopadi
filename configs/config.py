@@ -29,6 +29,7 @@ ws_path = os.getenv("WORKSPACE_PATH")
 data_paths = {
     'tcga_crc_msi_512': os.path.join(ws_path, 'datasets/tcga/tcga_crc_512.lmdb'),
     'japan': os.path.join(ws_path, 'datasets/japan/japan-lmdb'),
+    'tcga_brca_512': os.path.expanduser('dataset/tcga/tcga-brca-512.lmdb'),
 }
 
 
@@ -283,6 +284,10 @@ class TrainConfig(BaseConfig):
             return BrainLmdb(path=path or self.data_path, **kwargs)
         elif self.data_name == 'japan':
             return PanCancerLmdb(path=path or self.data_path, **kwargs)
+        elif self.data_name == 'tcga_brca_512':
+            return TcgaBRCA512lmdbwoMetadata(path=path or self.data_path,
+                                   image_size=self.img_size,
+                                   **kwargs)
         else:
             raise NotImplementedError()
 
