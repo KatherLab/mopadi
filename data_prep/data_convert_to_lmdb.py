@@ -9,6 +9,7 @@ from tqdm import tqdm
 import os
 import re
 from dotenv import load_dotenv
+import json
 
 load_dotenv()
 ws_path = os.getenv("WORKSPACE_PATH")
@@ -99,12 +100,52 @@ class ImageFolder(Dataset):
     """
     Custom dataset class for handling image folders.
     """
-    def __init__(self, folder, exts=["jpg", "png", "tif"]):
+    def __init__(self, folder, test_patients_file = None, exts=["jpg", "png", "tif"]):
         super().__init__()
         self.folder = folder
-        self.paths = sorted(p for ext in exts for p in Path(folder).glob(f"**/*.{ext}")
-                    if not any(part.startswith(".") for part in p.parts))
+        self.test_patients = self._load_test_patients(test_patients_file) if test_patients_file else None
+
+        self.paths = sorted(
+            [
+                p for ext in exts 
+                for p in Path(folder).glob(f"**/*.{ext}")
+                if 
+                #'Tile' in (p.stem) and 
+                not any(part.startswith(".") for part in p.parts)
+            ]
+        )
+        unique_patients = ["-".join(str(path).split("/")[-2].split("-")[:3]) for path in self.paths]
+        print(f"Total unique patients: {len(set(unique_patients))} and nr of images: {len(self.paths)}")
+
+        if self.test_patients:
+            self.paths = [
+                p for p in self.paths 
+                if "-".join(str(p).split("/")[-2].split("-")[:3]) in self.test_patients #not in self.test_patients
+                #and "Liver_hepatocellular_carcinoma" in str(p) or "Cholangiocarcinoma" in str(p)
+            ]
+            #print(self.paths)
+            print(f"Number of images to be put in the lmdb: {len(self.paths)}")
+
+            unique_patients = ["-".join(str(path).split("/")[-2].split("-")[:3]) for path in self.paths]
+            print(f"Total unique patients left after filtering: {len(set(unique_patients))}")
+
+            with open(f"{out_path}/patients-ids.txt", 'w') as file:
+                for pid in sorted(set(unique_patients)):
+                    file.write(f"{pid}\n")
+
         return
+
+    def _load_test_patients(self, test_patients_file):
+        print(f"Data split file given, loading test patients from {test_patients_file}")
+        with open(test_patients_file, 'r') as file:
+            data = json.load(file)
+            test_patients = {patient for patient in data['Test set patients']}
+            #test_patients = set()
+            #for cancer_type, details in data.items():
+            #    patients = details.get("Test set patients", [])
+            #    test_patients.update(patients)
+            print(f"Number of patients in the set: {len(test_patients)}")
+        return test_patients
 
     def __len__(self):
         return len(self.paths)
@@ -121,36 +162,21 @@ if __name__ == "__main__":
     """
 
     # TCGA CRC 512x512 ------------------------------------------------------------------------------------
-    # map_size=10056487220
-    # in_path = f"{ws_path}/data/TCGA-CRC/TCGA-CRC-tiles_512x512-only-tumor-tiles"
-    # out_path = f"{ws_path}/mopadi/datasets/tcga/tcga_crc_512.lmdb"
-
-    # TCGA CRC 224x224 only with MSIH clini info ----------------------------------------------------------
-    # in_path = f"{ws_path}/data/TCGA-CRC/TCGA-CRC-MSI/TCGA-CRC-only-tumor-tiles-msi-train"
-    # out_path = f"{ws_path}/mopadi/datasets/tcga/tcga_crc-msi-feb-16-train-lmdb"
-
-    in_path = f"{ws_path}/data/TCGA-CRC/TCGA-CRC-MSI/TCGA-CRC-only-tumor-tiles-msi-val"
-    out_path = f"{ws_path}/mopadi/datasets/tcga/tcga_crc-msi-feb-16-val-lmdb"
-    map_size = 80 * 1024**3
-
-    # TCGA CRC 224x224 only with BRAF clini info ----------------------------------------------------------
-    # in_path = f"{ws_path}/data/TCGA-CRC/TCGA-CRC-only-tumor-BRAF/TCGA-CRC-only-tumor-BRAF-train"
-    # out_path = f"{ws_path}/mopadi/datasets/tcga/tcga_crc-braf-train-lmdb"
-    # map_size = 40 * 1024**3
+    map_size=140 * 1024**3
+    in_path = f"/mnt/bulk-ganymede/laura/deep-liver/data/TCGA-CRC/tiles_512x512_05mpp"
+    out_path = f"/mnt/bulk-ganymede/laura/deep-liver/data/TCGA-CRC/tcga_crc_512_lmdb-test"
+    test_patients_file = f"/mnt/bulk-mars/laura/diffae/data/TCGA-CRC/new_split/data_info.json"
 
     # BRAIN 224x224 ----------------------------------------------------------------------------------------
     # in_path = f"{ws_path}/data/brain"
     # out_path = f"{ws_path}/mopadi/datasets/brain"
     # map_size = 10 * 1024**3
 
-    # JAPAN 224x224 TRAIN -----------------------------------------------------------------------------------
-    # in_path = f"{ws_path}/data/japan/train"
-    # out_path = f"{ws_path}/mopadi/datasets/japan/japan-lmdb"
-    # map_size = 140 * 1024**3
-
-    # JAPAN 224x224 VAL --------------------------------------------------------------------------------------
-    # in_path = f"{ws_path}/data/japan/val"
-    # out_path = f"{ws_path}/mopadi/datasets/japan/japan-lmdb-val"
+    # JAPAN 224x224 --------------------------------------------------------------------------------------
+    #in_path = f"/mnt/bulk-mars/laura/diffae/data/japan/new-all"
+    #out_path = f"/mnt/bulk-ganymede/laura/diffae/diffae/datasets/japan-lmdb-train-new"
+    #test_patients_file = f"/mnt/bulk-mars/laura/diffae/data/japan/test_train_split.txt"
+    #map_size = 140 * 1024**3
 
     # LUNG 224x224 TRAIN -------------------------------------------------------------------------------------
     # in_path = f"{ws_path}/data/lung/train"
@@ -159,9 +185,17 @@ if __name__ == "__main__":
     # LUNG 224x224 VAL ---------------------------------------------------------------------------------------
     # in_path = f"{ws_path}/data/lung/val"
     # out_path = f"{ws_path}/mopadi/datasets/lung/subtypes-lmdb-val"
-
     # map_size = 60 * 1024**3
 
+    # LIVER SUBTYPES 224x224 TRAIN ---------------------------------------------------------------------------------------
+    # in_path = f"{ws_path}/data/liver_types/test"
+    # out_path = f"{ws_path}/mopadi/datasets/liver/types-lmdb-test"
+    # map_size = 60 * 1024**3
+
+    # CPTAC LUAD EXT VAL ---------------------------------------------------------------------------------------
+    #in_path = f"{ws_path}/data/cache-CPTAC-LUAD"
+    #out_path = f"{ws_path}/mopadi/datasets/lung/cptac-luad-ext-val-lmdb"
+    #map_size = 100 * 1024**3
 
     # whether to write patient IDs as metadata in lmdb dataset
     write_metadata = False
@@ -172,11 +206,11 @@ if __name__ == "__main__":
 
     write_fnames = True
     
-    num_workers = 16
+    num_workers = 8
     if not os.path.exists(out_path):
         os.makedirs(out_path)
 
-    dataset = ImageFolder(in_path)
+    dataset = ImageFolder(in_path, test_patients_file)
     print(f"Total images: {len(dataset)}")
 
     # Set the map_size parameter slightly larger than the estimated total size of your 
