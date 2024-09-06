@@ -7,6 +7,8 @@ from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms
 import torch
+import glob
+from tqdm import tqdm
 import pandas as pd
 import numpy as np
 import os
@@ -15,6 +17,37 @@ from dotenv import load_dotenv
 
 load_dotenv()
 ws_path = os.getenv('WORKSPACE_PATH')
+
+
+class SubsetDataset(Dataset):
+    def __init__(self, dataset, size):
+        assert len(dataset) >= size
+        self.dataset = dataset
+        self.size = size
+
+    def __len__(self):
+        return self.size
+
+    def __getitem__(self, index):
+        assert index < self.size
+        return self.dataset[index]
+        
+
+class ImgDataset(Dataset):
+    """For making predictions for manipulated images."""
+    def __init__(self, image_path, sample=0, transform=None):
+        self.transform = transform
+        self.image_path = image_path
+
+    def __len__(self):
+        return 1
+
+    def __getitem__(self):
+        image = Image.open(os.path.join(self.image_path))
+        image = image.convert("RGB")
+        if self.transform:
+            image = self.transform(image)
+        return (image, self.image_path)
 
 
 class ImagesBaseDataset(Dataset):
@@ -124,12 +157,11 @@ class TCGADataset(ImagesBaseDataset):
         return data
 
     def get_images_by_patient_and_fname(self, patient_name, coords):
-        all_dir = f'{ws_path}/data/TCGA-CRC/TCGA-CRC-MSI/TCGA-CRC-only-tumor-tiles-msi-all'
-        all_patients = [f for f in os.listdir(all_dir) if os.path.isdir(os.path.join(all_dir, f))]
+        all_patients = [f for f in os.listdir(self.images_dir) if os.path.isdir(os.path.join(self.images_dir, f))]
 
         for patient in all_patients:
             if patient_name in patient:
-                patient_path = os.path.join(all_dir, patient)
+                patient_path = os.path.join(self.images_dir, patient)
         tiles = os.listdir(patient_path)
         img_path = None
         for tile in tiles:
@@ -149,30 +181,79 @@ class TCGADataset(ImagesBaseDataset):
         return image_details
     
 
+class TcgaBRCA512lmdbwoMetadata(Dataset):
+    def __init__(self,
+                 path=None,
+                 split=None,
+                 as_tensor: bool = True,
+                 do_augment: bool = True,
+                 do_normalize: bool = True,
+                 **kwargs):
+        self.data = BaseLMDB(path, zfill=5)
+        self.length = len(self.data)
+
+        if split is None:
+            self.offset = 0
+        elif split == 'train':
+            self.length = 85204
+            self.offset = 0
+        elif split == 'test':
+            self.length = self.length - 85204
+            self.offset = 85204
+        else:
+            raise NotImplementedError()
+
+        transform = []
+        if do_augment:
+            transform.append(transforms.RandomHorizontalFlip())
+        if as_tensor:
+            transform.append(transforms.ToTensor())
+        if do_normalize:
+            transform.append(transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)))
+        self.transform = transforms.Compose(transform)
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, index):
+        assert index < self.length
+        index = index + self.offset
+        print(type(self.data[index]))
+        img = self.data[index]
+        if self.transform is not None:
+            img = self.transform(img)
+        return {'img': img, 'index': index}
+
+
 class TextureDataset(ImagesBaseDataset):
-    def __init__(self, images_dir, path_to_gt_table, transform=None, do_augment=False, do_transform=True, do_normalize=True):
+    def __init__(self, images_dir, transform=None, do_augment=False, do_transform=True, do_normalize=True, ext="tif"):
         super().__init__(images_dir, transform=transform, do_augment=do_augment, do_transform=do_transform, do_normalize=do_normalize)
         self.images_dir = images_dir
-        self.df = pd.read_csv(path_to_gt_table)
-        self.df = self.df.set_index('FILENAME')
-        try:
-            self.df.drop(columns=['Unnamed: 0'], inplace=True)
-        except:
-            pass
-        self.PRED_LABEL = sorted(self.df.columns)
-        print('The following order should match the order the Clf was trained with:')
-        print(self.PRED_LABEL)
+
+        self.id_to_cls = TextureAttrDataset.id_to_cls
+        self.cls_to_id = TextureAttrDataset.cls_to_id
+
+        self.image_paths = glob.glob(os.path.join(images_dir, '**', f'*.{ext}'), recursive=True)
+        self.PRED_LABEL = self.id_to_cls
 
     def __getitem__(self, idx):
-        path = os.path.join(self.images_dir, self.df.index[idx].split("-")[0], self.df.index[idx])
-        img = Image.open(path).convert('RGB')
-        pred_label = self.get_pred_label(idx)
+        image_path = self.image_paths[idx]
+        img = Image.open(image_path).convert('RGB')
+        
+        class_name = os.path.basename(image_path).split('-')[0]
+        
+        class_id = self.cls_to_id[class_name]
+        pred_label = torch.zeros(len(self.id_to_cls), dtype=torch.float32)
+        pred_label[class_id] = 1
 
         if self.transform:
             img = self.transform(img)
 
-        return {'img': img, 'labels': pred_label, 'gt': self.df.index[idx].split("-")[0], 'filename': self.df.index[idx]}
-    
+        return {'img': img, 'labels': pred_label, 'gt': class_name, 'filename': os.path.basename(image_path)}
+
+    def __len__(self):
+        return len(self.image_paths)
+
 
 class JapanDataset(ImagesBaseDataset):
     def __init__(self, images_dir, path_to_gt_table, transform=None):
@@ -220,11 +301,12 @@ class BrainDataset(ImagesBaseDataset):
     
 
 class LungDataset(ImagesBaseDataset):
-    def __init__(self, images_dir, path_to_gt_table, transform=None):
+    def __init__(self, images_dir, path_to_gt_table=None, transform=None):
         super().__init__(images_dir, transform=transform)
         self.transform = transform
         self.images_dir = images_dir
-        self.df = pd.read_csv(path_to_gt_table, delim_whitespace=True)
+        if path_to_gt_table is not None:
+            self.df = pd.read_csv(path_to_gt_table, delim_whitespace=True)
         self.PRED_LABEL = ['Lung_adenocarcinoma', 'Lung_squamous_cell_carcinoma']
 
     def __getitem__(self, idx):
@@ -238,9 +320,38 @@ class LungDataset(ImagesBaseDataset):
         return {'img': image, 'labels': pred_label, 'filename': fname}
 
     def get_images_by_patient_and_fname(self, patient_name, fname):
-        matching_patients = self.df[self.df['FILENAME'].str.contains(patient_name) & self.df['FILENAME'].str.contains(fname)]
-        assert len(matching_patients) == 1, "Expected exactly one matching row, but found {}".format(len(matching_patients))
-        
+        all_patients = [f for f in os.listdir(self.images_dir) if os.path.isdir(os.path.join(self.images_dir, f))]
+
+        patient_path = None
+        for patient in all_patients:
+            if patient_name in patient:
+                patient_path = os.path.join(self.images_dir, patient)
+                break
+
+        if patient_path is None or not os.path.exists(patient_path):
+            return None
+
+        tiles = os.listdir(patient_path)
+        img_path = None
+        filename = None
+        for tile in tiles:
+            if fname in tile:
+                img_path = os.path.join(patient_path, tile)
+                filename = tile
+                break
+
+        if img_path is None:
+            return None
+
+        image = Image.open(img_path)
+
+        if self.transform:
+            image = self.transform(image)
+
+        image_details = {'image': image, 'filename': filename, 'path': img_path}
+        return image_details
+
+        """
         image_details = []
         for idx, row in matching_patients.iterrows():
             fname = row['FILENAME']
@@ -254,6 +365,7 @@ class LungDataset(ImagesBaseDataset):
                 label = self.get_pred_label(idx)
                 image_details.append({'image':image, 'filename': fname, 'path': image_path, 'label': label})
         return image_details[0]
+        """
 
   
 class DatasetBase(Dataset):
@@ -280,7 +392,7 @@ class DatasetBase(Dataset):
     def __getitem__(self, index):
         assert index < self.length
         data_item, fname = self.data[index]
-        # data_item = self.data[index]
+        #data_item = self.data[index]
         img = data_item if isinstance(data_item, Image.Image) else data_item['img']
         if self.transform:
             img = self.transform(img)
@@ -318,7 +430,7 @@ class BaseLMDB(Dataset):
             img_bytes = txn.get(key)
 
         buffer = BytesIO(img_bytes)
-        img = Image.open(buffer)
+        img = Image.open(buffer).convert('RGB')
         return img, filename
 
 
@@ -393,7 +505,7 @@ class TextureLMDB(DatasetBase):
 
 class TcgaCRCwoMetadata(DatasetBase):
     def __init__(self,
-                 path=os.path.expanduser('datasets/tcga/tcga_crc-224x224-msi.lmdb'),
+                 path=None,
                  as_tensor: bool = True,
                  do_augment: bool = True,
                  do_normalize: bool = True,
@@ -405,7 +517,7 @@ class TcgaCRCwoMetadata(DatasetBase):
 
 class TcgaCRCwMetadata(DatasetBase):
     def __init__(self,
-                 path=os.path.expanduser('datasets/tcga/tcga_crc-224x224-msi-val.lmdb'),
+                 path=None,
                  as_tensor: bool = True,
                  do_augment: bool = True,
                  do_normalize: bool = True,
@@ -443,14 +555,13 @@ class BrainLmdb(DatasetBase):
 
 class PanCancerLmdb(DatasetBase):
     def __init__(self,
-                 path=os.path.expanduser('datasets/japan/japan-lmdb'),
+                 path=None,
                  as_tensor: bool = True,
                  do_augment: bool = True,
                  do_normalize: bool = True,
                  zfill=5):
 
         super().__init__(path, lmdb_class=BaseLMDB, as_tensor=as_tensor, do_augment=do_augment, do_normalize=do_normalize, zfill=zfill)
-
 
 
 class LungLmdb(DatasetBase):
@@ -492,19 +603,51 @@ class AttrDatasetBase(Dataset):
     def __len__(self):
         return len(self.df)
 
+    def view_all_patient_ids(self):
+        """
+        Method to view all patient IDs present in the LMDB dataset.
+        """
+        patient_ids = set()
+        for index in tqdm(range(len(self.data))):
+            try:
+                _, fname = self.data[index]
+                pat_id = "-".join(fname.split("/")[-2].split("-")[:3])
+                patient_ids.add(pat_id)
+            except Exception as e:
+                print(f"Error processing index {index}: {e}")
+
+        print(f"Total unique patient IDs: {len(patient_ids)}")
+        return patient_ids
+
     def __getitem__(self, index):
         row = self.df.iloc[index]
-        img_name = row.name
-        img_idx, _ = img_name.split('.')
-        # img, fname = self.data[int(img_idx)]
-        img = self.data[int(img_idx)]
+        #img_name = row.name
+
+        # img_idx, _ = img_name.split('.')
+        img_idx = f'{str(index).zfill(5)}'.encode('utf-8')
+
+        img, fname = self.data[int(img_idx)]
+        #img = self.data[int(img_idx)]
+
+        # Extract patient ID from the file path
+        pat_id = os.path.join(fname.split("/")[-2], os.path.split(fname)[1])
+
+        if pat_id not in self.df['FILENAME'].values:
+            print(f"Patient ID {pat_id} not found in clinical table.")
+            raise IndexError(f"Patient ID {pat_id} not found in clinical table.")
+
+        # Retrieve the row corresponding to the patient ID
+        row = self.df[self.df['FILENAME'] == pat_id].iloc[0]
+
         labels = [0] * len(self.cls_to_id)
         for k, v in row.items():
+            if k == 'FILENAME':
+                continue
             labels[self.cls_to_id[k]] = int(v)
 
         if self.transform:
             img = self.transform(img)
-        return {'img': img, 'index': index, 'labels': torch.tensor(labels)}#, 'filename': fname}
+        return {'img': img, 'index': index, 'labels': torch.tensor(labels), 'filename': fname}
 
 
 class TextureAttrDataset(AttrDatasetBase):
@@ -534,13 +677,14 @@ class TextureAttrDataset(AttrDatasetBase):
 class TcgaCrcMsiAttrDataset(AttrDatasetBase):
     id_to_cls = [
         'nonMSIH',
-        'MSIH'
+        'MSIH',
+        'unknown'
     ]
     cls_to_id = {v: k for k, v in enumerate(id_to_cls)}
 
     def __init__(self,
-                 path=os.path.expanduser(f'{ws_path}/mopadi/datasets/tcga/tcga_crc-msi-dec-20-train-lmdb'),
-                 attr_path=os.path.expanduser(f'{ws_path}/mopadi/datasets/tcga/tcga_crc_anno_only_msi/list_attr_tcga_crc_224x224-msi.txt'),
+                 path=os.path.expanduser(f'{ws_path}/mopadi/datasets/crc/tcga_crc_512_lmdb'),
+                 attr_path=os.path.expanduser(f'{ws_path}/mopadi/datasets/crc/list_attr_msi_tcga_crc_512.txt'),
                  do_augment: bool = False,
                  do_transform: bool = True,
                  do_normalize: bool = True):
@@ -560,23 +704,6 @@ class BrainAttrDataset(AttrDatasetBase):
                  attr_path=os.path.expanduser(
                      # f'{ws_path}/mopadi/datasets/brain_anno/list_attr.txt'),
                      f'{ws_path}/mopadi/datasets/brain/brain_anno-GBM-IDHmut-new/list_attr.txt'),
-                 do_augment: bool = False,
-                 do_transform: bool = True,
-                 do_normalize: bool = True):
-        
-        super().__init__(path, attr_path, self.cls_to_id, do_transform, do_augment, do_normalize)
-
-
-class TCGACRCBRAFAttrDataset(AttrDatasetBase):
-    id_to_cls = [
-        'WT',
-        'MUT',
-    ]
-    cls_to_id = {v: k for k, v in enumerate(id_to_cls)}
-
-    def __init__(self,
-                 path=os.path.expanduser('datasets/tcga/tcga_crc-braf-train-lmdb'),
-                 attr_path=os.path.expanduser('datasets/tcga/tcga_crc_anno_only_braf/list_attr_tcga_crc_224x224-braf.txt'),
                  do_augment: bool = False,
                  do_transform: bool = True,
                  do_normalize: bool = True):
@@ -622,8 +749,8 @@ class PanCancerClsDataset(AttrDatasetBase):
     cls_to_id = {v: k for k, v in enumerate(id_to_cls)}
 
     def __init__(self,
-                 path=os.path.expanduser('datasets/japan/japan-lmdb'),
-                 attr_path=os.path.expanduser('datasets/japan/japan_anno/list_attr.txt'),
+                 path=f'{ws_path}/mopadi/datasets/pancancer/japan-lmdb',
+                 attr_path=f'{ws_path}/mopadi/datasets/pancancer/list_attr_train.txt',
                  do_augment: bool = False,
                  do_transform: bool = True,
                  do_normalize: bool = True):
@@ -646,3 +773,21 @@ class LungClsDataset(AttrDatasetBase):
                  do_normalize: bool = True):
         
         super().__init__(path, attr_path, self.cls_to_id, do_transform, do_augment, do_normalize)
+
+
+class LiverCancerTypesClsDataset(AttrDatasetBase):
+    id_to_cls = [
+        'hcc', 
+        'cca'
+    ]
+    cls_to_id = {v: k for k, v in enumerate(id_to_cls)}
+
+    def __init__(self,
+                 path=os.path.expanduser('datasets/liver/types-lmdb-train'),
+                 attr_path=os.path.expanduser('datasets/liver/types-lmdb-train-anno/list_attr.txt'),
+                 do_augment: bool = False,
+                 do_transform: bool = True,
+                 do_normalize: bool = True):
+        
+        super().__init__(path, attr_path, self.cls_to_id, do_transform, do_augment, do_normalize)
+
