@@ -1,0 +1,6 @@
+*.pkl binary
+
+# For text count
+# *.ipynb text
+
+*.ipynb linguist-documentation
