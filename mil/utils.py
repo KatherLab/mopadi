@@ -15,41 +15,53 @@ from sklearn.metrics import roc_auc_score
 import pickle
 import math
 import sys
+import os
 from cmcrameri import cm
 import matplotlib.font_manager as font_manager
 sys.path.insert(0, "../")
 from train_diff_autoenc import LitModel
+from dotenv import load_dotenv
 
-font_dir = '/mnt/bulk/laura/diffae/wanshi-utils/HelveticaNeue.ttf'
+load_dotenv()
+ws_path = os.getenv("WORKSPACE_PATH")
+
+font_dir = f'/mnt/bulk/laura/diffae/wanshi-utils/HelveticaNeue.ttf'
 my_font = font_manager.FontProperties(fname=font_dir)
 
+def extract_patient_id(filename):
+    return "-".join(filename.split('-')[:3])
+
 class Classifier(nn.Module):
-    def __init__(self, dim, num_heads, num_seeds, num_classes):
+    def __init__(self, dim, num_heads, num_seeds, num_classes, ln=False):
         super(Classifier, self).__init__()
         self.dim = dim
+        self.layer_norm = nn.LayerNorm(normalized_shape=dim)
         self.pool = nn.Sequential(
-                    PMA(dim,num_heads,num_seeds),
-                    SAB(dim,dim,num_heads),
+                    PMA(dim, num_heads, num_seeds, ln),
+                    SAB(dim, dim, num_heads, ln),
                     )
         self.classifier = nn.Sequential(
-            nn.Dropout(),
+            nn.Dropout(0.2),
             nn.Linear(dim, dim),
             nn.SiLU(),
-            nn.Dropout(),
-            nn.Linear(dim,num_classes),
+            nn.Dropout(0.2),
+            nn.Linear(dim, num_classes),
             )                        # empirical evidence showed that a non-linear head can improve performance
         
     def forward(self,x):
-        x = self.pool(x).max(1).values    # Taking the max here probably makes more sense? TBD
+        x = self.layer_norm(x) #try out
+        x = self.pool(x).max(1).values
         return self.classifier(x)
     
 class FeatDataset(Dataset):
-    def __init__(self, feat_list, annot_file, target_label, target_dict, nr_feats, indices=None):
+    def __init__(self, feat_list, annot_file, target_label, target_dict, nr_feats=None, indices=None, shuffle=False):
         self.feat_list = feat_list
         self.indices = indices if indices is not None else list(range(len(self.feat_list)))
         try:
             if annot_file.endswith(".tsv"):
                 self.df = pd.read_csv(annot_file,sep="\t")
+            elif annot_file.endswith(".xlsx"):
+                self.df = pd.read_excel(annot_file)
             else:    
                 self.df = pd.read_csv(annot_file)
         except Exception:
@@ -58,6 +70,7 @@ class FeatDataset(Dataset):
         self.target_label = target_label
         self.target_dict = target_dict
         self.nr_feats = nr_feats
+        self.shuffle = shuffle
 
     def __len__(self):
         return len(self.indices)
@@ -69,11 +82,18 @@ class FeatDataset(Dataset):
                 for i in indices]
 
     def get_nr_pos(self, indices=None):
+        #return len(self.df[self.df[self.target_label]==pos_label].values)
+        #targets = np.array([self.target_dict[self.df[self.df.PATIENT==feat_path.split("/")[-1].split(".h5")[0]][self.target_label].values[0]]
+        #            for feat_path in self.feat_list])
+        #return len(targets[targets==1])
         indices = indices if indices is not None else self.indices
         targets = np.array(self.get_targets(indices))
         return np.sum(targets == 1)
 
     def get_nr_neg(self, indices=None):
+        #targets = np.array([self.target_dict[self.df[self.df.PATIENT==feat_path.split("/")[-1].split(".h5")[0]][self.target_label].values[0]]
+        #            for feat_path in self.feat_list])
+        #return len(targets[targets==0])
         indices = indices if indices is not None else self.indices
         targets = np.array(self.get_targets(indices))
         return np.sum(targets == 0)
@@ -88,13 +108,18 @@ class FeatDataset(Dataset):
         feat_path = self.feat_list[actual_idx]
         pat = "-".join(feat_path.split("/")[-1].split(".h5")[0].split("-")[:3])
         target = self.target_dict[self.df[self.df.PATIENT==pat][self.target_label].values[0]]
-        feats = torch.from_numpy(h5py.File(feat_path)["features"][:])
-        if feats.shape[0] > self.nr_feats:
-            indices = torch.randperm(feats.shape[0])
-            feats = feats[indices[:self.nr_feats]]
-        else:
-            feats = torch.cat((feats, torch.zeros(self.nr_feats - feats.shape[0], feats.shape[1])))
-        feats = torch.cat((feats, torch.zeros(self.nr_feats - feats.shape[0], feats.shape[1])))
+        feats = torch.from_numpy(h5py.File(feat_path)["feats"][:])
+
+        if self.shuffle:
+            perm = torch.randperm(feats.size(0))
+            feats = feats[perm]
+
+        if self.nr_feats is not None:
+            if feats.shape[0] > self.nr_feats:
+                indices = torch.randperm(feats.shape[0])
+                feats = feats[indices[:self.nr_feats]]
+            else:
+                feats = torch.cat((feats, torch.zeros(self.nr_feats - feats.shape[0], feats.shape[1])))
 
         return feats, target, pat
 
@@ -143,7 +168,7 @@ def get_top_tiles(model, feats, k=15, cls_id=1, device='cuda:0'):
     scores = F.softmax(model(unsq),dim=1)
     return  scores[:, cls_id].topk(k).indices
 
-def train(model,
+def train_mil(model,
           train_set,
           val_set,
           test_set,
@@ -155,8 +180,8 @@ def train(model,
           ):
 
     train_loader = DataLoader(train_set, batch_size=conf.batch_size, shuffle=True, num_workers=conf.num_workers)
-    val_loader = DataLoader(val_set, batch_size=conf.batch_size, shuffle=False, num_workers=conf.num_workers)
-    test_loader = DataLoader(test_set, batch_size=conf.batch_size, shuffle=False, num_workers=conf.num_workers)
+    val_loader = DataLoader(val_set, batch_size=1, shuffle=False, num_workers=conf.num_workers)
+    test_loader = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=1)
     data_loader = DataLoader(full_dataset, batch_size=1, shuffle=False, num_workers=conf.num_workers)
 
     loader_dict = {"train": train_loader, "val": val_loader, "test": test_loader, "total": data_loader}
@@ -335,21 +360,20 @@ def test(model, loader_dict, target_label, out_dir, positive_weights):
 
     tqdm.write(f"Test loss: {test_loss_avg:.4f}, Test Acc: {test_accuracy*100:.2f}, AUROC: {test_auroc:.4f}")
 
-    ax_roc.legend(loc="lower right", bbox_to_anchor=(0.97, 0.03), prop={'size': 16})
-    fig_prc.legend(loc="lower right", bbox_to_anchor=(0.97, 0.03), prop={'size': 16})
+    ax_roc.legend(loc="lower right", bbox_to_anchor=(0.97, 0.03), prop={'size': 24})
+    fig_prc.legend(loc="lower right", bbox_to_anchor=(0.97, 0.03), prop={'size': 24})
     ax_roc.plot([0, 1], [0, 1], "gray", linestyle="--")
-    ax_prc.tick_params(axis='both', which='both', labelsize=14)
-    ax_roc.tick_params(axis='both', which='both', labelsize=14)
+    ax_prc.tick_params(axis='both', which='both', labelsize=22)
+    ax_roc.tick_params(axis='both', which='both', labelsize=22)
 
     ax_roc.fill_between(fpr, tpr, alpha=0.05, color=color)
 
-
-    ax_prc.set_xlabel('Recall',fontsize=14)
-    ax_prc.set_ylabel('Precision',fontsize=14)
-    ax_roc.set_xlabel('False Positive Rate', fontproperties=my_font, fontsize=14)
-    ax_roc.set_ylabel('True Positive Rate', fontproperties=my_font, fontsize=14)
+    ax_prc.set_xlabel('Recall',fontsize=24)
+    ax_prc.set_ylabel('Precision',fontsize=24)
+    ax_roc.set_xlabel('False Positive Rate', fontproperties=my_font, fontsize=24)
+    ax_roc.set_ylabel('True Positive Rate', fontproperties=my_font, fontsize=24)
     ax_roc.set_aspect("equal")
-    ax_roc.set_title(f'AUC = {np.mean(aurocs):.3f}$\pm${np.std(aurocs):.3f}', fontsize=16)
+    ax_roc.set_title(f'AUC = {np.mean(aurocs):.3f}$\pm${np.std(aurocs):.3f}', fontsize=28)
 
     fig_roc.savefig(f"{out_dir}/ROC-mil-{target_label}.pdf",dpi=300)
     fig_roc.savefig(f"{out_dir}/ROC-mil-{target_label}.png", dpi=300)
@@ -357,7 +381,6 @@ def test(model, loader_dict, target_label, out_dir, positive_weights):
     fig_prc.savefig(f"{out_dir}/PRC-mil-{target_label}.pdf",dpi=300)
     
     # Save all predictions to see if manipulation will have an effect
-    
     pred_dict = {"pat_ids":loader_dict["total"].dataset.get_patient_ids(),"preds":[], target_label:[]}
     all_predicted_labels = []
     # all_targets = []

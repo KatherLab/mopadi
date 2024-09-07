@@ -55,7 +55,7 @@ class SAB(nn.Module):
         return self.mab(X, X)
 
 class ISAB(nn.Module):
-    def __init__(self, dim_in, dim_out, num_heads, num_inds, ln=True:
+    def __init__(self, dim_in, dim_out, num_heads, num_inds, ln=True):
         super(ISAB, self).__init__()
         self.I = nn.Parameter(torch.Tensor(1, num_inds, dim_out))
         nn.init.xavier_uniform_(self.I)
