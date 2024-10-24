@@ -8,6 +8,8 @@ import numpy as np
 import pandas as pd
 import openslide
 from openslide import open_slide
+from shapely.validation import make_valid
+import traceback
 import logging
 import h5py
 
@@ -124,6 +126,9 @@ def read_annotations(annon_path):
             if not polygon.is_valid:
                 polygon = polygon.buffer(0)
                 print("Invalid polygon was fixed.")
+            if not polygon.is_valid:
+                polygon = make_valid(polygon)
+                print("Invalid polygon was fixed using make_valid.")
 
     # Combine the individual polygons into a single MultiPolygon object
     annPolys = sg.MultiPolygon(polygons)
@@ -135,8 +140,8 @@ def find_substring_in_list(strings, substring):
 
 
 def extract_coordinates(filename):
-    # Extract coordinates from filename
-    match = re.search(r'\((\d+),(\d+)\)', filename)
+    """Extract coordinates from filename. If coordinates were written as X,Y """
+    match = re.search(r'\((\d+),(\d+)\)', filename)    # adjust here to the correct pattern!
     if match:
         return int(match.group(1)), int(match.group(2))
     else:
@@ -147,41 +152,83 @@ def get_slide_mpp(slide: openslide.OpenSlide) -> float:
         slide_mpp = float(slide.properties[openslide.PROPERTY_NAME_MPP_X])
         print(f"Slide MPP successfully retrieved from metadata: {slide_mpp}")
     except KeyError:
-        # Try out the missing MPP handlers
+        # Try to extract from comments
         try:
             slide_mpp = extract_mpp_from_comments(slide)
             if slide_mpp:
                 print(f"MPP retrieved from comments after initial failure: {slide_mpp}")
             else:
+                print(f"MPP is missing in the comments, attempting to extract from metadata...")
                 slide_mpp = extract_mpp_from_metadata(slide)
                 print(f"MPP re-matched from metadata after initial failure: {slide_mpp}")
-        except:
-            print("MPP could not be loaded from the slide!")
+        except Exception as e:
+            print(f"MPP could not be loaded from the slide!") #Error: {e}")
+            traceback.print_exc()
+            slide_mpp = None
     return slide_mpp
 
 
+def extract_mpp_from_metadata(slide: openslide.OpenSlide) -> float:
+    from xml.dom.minidom import parseString
+    from xml.parsers.expat import ExpatError
+    try:
+        # Retrieve the ImageDescription property
+        xml_path = slide.properties.get('tiff.ImageDescription', None)
+        if not xml_path:
+            raise ValueError("No ImageDescription found in slide properties.")
+
+        # Check and print the first 100 characters to inspect content type
+        print(f"Content length: {len(xml_path)}")
+        print(f"First 100 characters: {xml_path[:100]}")
+
+        # Determine if content is XML by checking if it starts with "<"
+        if xml_path.strip().startswith('<'):
+            # Attempt to parse as XML
+            try:
+                doc = parseString(xml_path)
+                collection = doc.documentElement
+                images = collection.getElementsByTagName("Image")
+                if not images:
+                    raise ValueError("No Image tag found in XML.")
+
+                pixels = images[0].getElementsByTagName("Pixels")
+                if not pixels:
+                    raise ValueError("No Pixels tag found in XML.")
+
+                mpp = float(pixels[0].getAttribute("PhysicalSizeX"))
+                print(f"MPP extracted from XML metadata: {mpp}")
+                return mpp
+            except ExpatError as xml_error:
+                print(f"XML parsing error: {xml_error}")
+                # If parsing fails, continue to try text extraction
+                print("Failed to parse as XML, attempting plain text extraction.")
+
+        mpp_pattern = r'(\d+\.\d+|\d+) ?(microns|µm|um|mpp)'
+        match = re.search(mpp_pattern, xml_path, re.IGNORECASE)
+        if match:
+            mpp_value = match.group(1)
+            mpp = float(mpp_value)
+            print(f"MPP extracted from plain text metadata: {mpp}")
+            return mpp
+        else:
+            raise ValueError("MPP value not found in the metadata text.")
+    
+    except Exception as e:
+        print(f"Failed to extract MPP from metadata: {e}")
+        traceback.print_exc()
+        return None
+
+
 def create_polygons_from_filenames(filenames):
+    """Extract coordinates from filename. Assumes that coordinates were written as X,Y """
     polygons = []
     for filename in filenames:
         coords = extract_coordinates(filename)
         if coords:
-            x, y = coords
-            polygon = Polygon([(x, y), (x + 512, y), (x + 512, y + 512), (x, y + 512)])
+            x, y = coords  # adjust here depending how tile fnames were written!
+            polygon = Polygon([(x, y), (x + 512, y), (x + 512, y + 512), (x, y + 512)])  # (x, y) top left
             polygons.append(polygon)
     return polygons
-
-
-
-def extract_mpp_from_metadata(slide: openslide.OpenSlide) -> float:
-    logging.exception("MPP is missing in the metadata of this file format, attempting to extract from metadata...")
-    import xml.dom.minidom as minidom
-    xml_path = slide.properties['tiff.ImageDescription']
-    doc = minidom.parseString(xml_path)
-    collection = doc.documentElement
-    images = collection.getElementsByTagName("Image")
-    pixels = images[0].getElementsByTagName("Pixels")
-    mpp = float(pixels[0].getAttribute("PhysicalSizeX"))
-    return mpp
 
 def extract_mpp_from_comments(slide: openslide.OpenSlide) -> float:
     slide_properties = slide.properties.get('openslide.comment')
@@ -191,7 +238,6 @@ def extract_mpp_from_comments(slide: openslide.OpenSlide) -> float:
         return match.group(1)
     else:
         return None
-    
 
 def contains_nan_or_inf(polygon):
     """Add checks for NaN/Inf values in polygon"""
