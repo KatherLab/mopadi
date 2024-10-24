@@ -42,7 +42,7 @@ class ImgDataset(Dataset):
     def __len__(self):
         return 1
 
-    def __getitem__(self):
+    def __getitem__(self, idx):
         image = Image.open(os.path.join(self.image_path))
         image = image.convert("RGB")
         if self.transform:
@@ -158,7 +158,7 @@ class TCGADataset(ImagesBaseDataset):
 
     def get_images_by_patient_and_fname(self, patient_name, coords):
         all_patients = [f for f in os.listdir(self.images_dir) if os.path.isdir(os.path.join(self.images_dir, f))]
-
+        print(f"Looking for {patient_name}")
         for patient in all_patients:
             if patient_name in patient:
                 patient_path = os.path.join(self.images_dir, patient)
@@ -638,12 +638,18 @@ class AttrDatasetBase(Dataset):
 
         # Retrieve the row corresponding to the patient ID
         row = self.df[self.df['FILENAME'] == pat_id].iloc[0]
+        #print(row)
 
         labels = [0] * len(self.cls_to_id)
         for k, v in row.items():
             if k == 'FILENAME':
                 continue
-            labels[self.cls_to_id[k]] = int(v)
+            if k in self.cls_to_id:
+                labels[self.cls_to_id[k]] = int(v)
+                valid_labels_found = True
+
+        if not valid_labels_found:
+            return None
 
         if self.transform:
             img = self.transform(img)
@@ -766,28 +772,83 @@ class LungClsDataset(AttrDatasetBase):
     cls_to_id = {v: k for k, v in enumerate(id_to_cls)}
 
     def __init__(self,
-                 path=os.path.expanduser('datasets/lung/subtypes-lmdb-train'),
-                 attr_path=os.path.expanduser('datasets/lung/lung_anno_train/list_attr.txt'),
+                 path = f'{ws_path}/mopadi/datasets/pancancer/japan-lmdb-train-new',
+                 attr_path = f'{ws_path}/mopadi/datasets/pancancer/list_classes_all.txt',
                  do_augment: bool = False,
                  do_transform: bool = True,
                  do_normalize: bool = True):
         
         super().__init__(path, attr_path, self.cls_to_id, do_transform, do_augment, do_normalize)
+
+        self.attr_path = attr_path
+        self.lmdb_path = path
+        self.valid_fnames = self.load_valid_filenames(attr_path)
+
+    def load_valid_filenames(self, attr_path):
+        """
+        Loads the attr_path file which contains filenames and their corresponding class indicators.
+        Returns a set of valid filenames based on the target cancer types. All in one attr file (test & train!)
+        """
+        valid_filenames = set()
+
+        with open(attr_path, 'r') as f:
+            total_img_nr = f.readline()
+
+            class_headers = f.readline().strip().split()[1:]
+            target_indices = [i for i, class_name in enumerate(class_headers) if class_name in self.cls_to_id]
+
+            for line in f:
+                parts = line.strip().split()
+                filename = parts[0]
+                class_flags = parts[1:]
+
+                for idx in target_indices:
+                    if class_flags[idx] == '1':
+                        valid_filenames.add(filename)
+                        break
+        return valid_filenames
 
 
 class LiverCancerTypesClsDataset(AttrDatasetBase):
     id_to_cls = [
-        'hcc', 
-        'cca'
+        'Cholangiocarcinoma', 
+        'Liver_hepatocellular_carcinoma'
     ]
     cls_to_id = {v: k for k, v in enumerate(id_to_cls)}
 
     def __init__(self,
-                 path=os.path.expanduser('datasets/liver/types-lmdb-train'),
-                 attr_path=os.path.expanduser('datasets/liver/types-lmdb-train-anno/list_attr.txt'),
+                 path = f'{ws_path}/mopadi/datasets/pancancer/japan-lmdb-train-new',
+                 attr_path = f'{ws_path}/mopadi/datasets/pancancer/list_classes_all.txt',
                  do_augment: bool = False,
                  do_transform: bool = True,
                  do_normalize: bool = True):
         
         super().__init__(path, attr_path, self.cls_to_id, do_transform, do_augment, do_normalize)
 
+        self.attr_path = attr_path
+        self.lmdb_path = path
+        self.valid_fnames = self.load_valid_filenames(attr_path)
+
+    def load_valid_filenames(self, attr_path):
+        """
+        Loads the attr_path file which contains filenames and their corresponding class indicators.
+        Returns a set of valid filenames based on the target cancer types. All in one attr file (test & train!)
+        """
+        valid_filenames = set()
+
+        with open(attr_path, 'r') as f:
+            total_img_nr = f.readline()
+
+            class_headers = f.readline().strip().split()[1:]
+            target_indices = [i for i, class_name in enumerate(class_headers) if class_name in self.cls_to_id]
+
+            for line in f:
+                parts = line.strip().split()
+                filename = parts[0]
+                class_flags = parts[1:]
+
+                for idx in target_indices:
+                    if class_flags[idx] == '1':
+                        valid_filenames.add(filename)
+                        break
+        return valid_filenames
