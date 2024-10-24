@@ -2,7 +2,7 @@ from configs.templates import *
 from configs.templates_latent import *
 from configs.templates_cls import *
 from train_diff_autoenc import *
-from train_linear_cls import *
+from linear_clf.train_linear_cls import *
 
 if __name__ == '__main__':
     # train the autoenc model
@@ -23,10 +23,10 @@ if __name__ == '__main__':
     # the rest can be trained locally
     # train the latent DPM
     gpus = [0]
-    conf = texture100k_autoenc_latent()
+    conf = texture100k_latent()
     train(conf, gpus=gpus)
 
     # train the linear classifier
     gpus = [0]
-    conf = texture100k_autoenc_cls()
+    conf = texture100k_linear_cls()
     train_cls(conf, gpus=gpus)
