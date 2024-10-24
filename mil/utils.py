@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 load_dotenv()
 ws_path = os.getenv("WORKSPACE_PATH")
 
-font_dir = f'/mnt/bulk/laura/diffae/wanshi-utils/HelveticaNeue.ttf'
+font_dir = f'{ws_path}/wanshi-utils/HelveticaNeue.ttf'
 my_font = font_manager.FontProperties(fname=font_dir)
 
 def extract_patient_id(filename):
@@ -41,15 +41,15 @@ class Classifier(nn.Module):
                     SAB(dim, dim, num_heads, ln),
                     )
         self.classifier = nn.Sequential(
-            nn.Dropout(0.2),
+            nn.Dropout(),
             nn.Linear(dim, dim),
             nn.SiLU(),
-            nn.Dropout(0.2),
+            nn.Dropout(),
             nn.Linear(dim, num_classes),
             )                        # empirical evidence showed that a non-linear head can improve performance
         
     def forward(self,x):
-        x = self.layer_norm(x) #try out
+        x = self.layer_norm(x)
         x = self.pool(x).max(1).values
         return self.classifier(x)
     
@@ -108,7 +108,15 @@ class FeatDataset(Dataset):
         feat_path = self.feat_list[actual_idx]
         pat = "-".join(feat_path.split("/")[-1].split(".h5")[0].split("-")[:3])
         target = self.target_dict[self.df[self.df.PATIENT==pat][self.target_label].values[0]]
-        feats = torch.from_numpy(h5py.File(feat_path)["feats"][:])
+        #feats = torch.from_numpy(h5py.File(feat_path)["feats"][:])
+        with h5py.File(feat_path, "r") as h5_file:
+            if 'feats' in h5_file:
+                feats = torch.from_numpy(h5_file['feats'][:])
+            elif 'features' in h5_file:
+                feats = torch.from_numpy(h5_file['features'][:])
+            else:
+                raise ValueError(f"Neither 'feats' nor 'features' found in {feat_path}")
+
 
         if self.shuffle:
             perm = torch.randperm(feats.size(0))
@@ -282,6 +290,80 @@ def train_mil(model,
     
     return model, loader_dict
 
+
+def train_full(model,
+          train_set,
+          test_set,
+          full_dataset,
+          out_dir,
+          positive_weights,
+          conf,
+          model_name="PMA_mil.pth",
+          ):
+
+    train_loader = DataLoader(train_set, batch_size=conf.batch_size, shuffle=True, num_workers=conf.num_workers)
+    test_loader = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=1)
+    data_loader = DataLoader(full_dataset, batch_size=1, shuffle=False, num_workers=conf.num_workers)
+
+    loader_dict = {"train": train_loader, "test": test_loader, "total": data_loader}
+
+    if torch.cuda.is_available():
+        model = model.cuda()
+
+    optimizer = optim.Adam(model.parameters(), lr=conf.lr)
+
+    positive_weights = torch.tensor(positive_weights, dtype=torch.float).cuda()
+
+    criterion = nn.CrossEntropyLoss(weight=positive_weights)
+
+    best_train_loss = float('inf')
+    best_model_state_dict = None
+    pbar = tqdm(total=conf.num_epochs, desc='Training Progress', unit='epoch')
+
+    for epoch in range(conf.num_epochs):
+        model.train()
+        
+        total_train_loss = 0.0
+        total_train_correct = 0
+        
+        for feats, targets, _ in tqdm(loader_dict["train"], leave=False):
+            if torch.cuda.is_available():
+                feats = feats.cuda()
+                targets = targets.cuda().to(torch.long)
+
+            logits = model(feats)
+            loss = criterion(logits, targets)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            total_train_loss += loss.item()
+            _, predicted_labels = torch.max(logits, dim=1)
+            total_train_correct += (predicted_labels == targets).sum().item()
+
+        train_loss_avg = total_train_loss / len(train_loader)
+        train_accuracy = total_train_correct / len(train_set)
+
+        # save the model with the lowest training loss
+        if train_loss_avg <= best_train_loss:
+            best_train_loss = train_loss_avg
+            best_model_state_dict = model.state_dict()
+
+        pbar.set_postfix(
+            loss=train_loss_avg,
+            acc=train_accuracy,
+        )
+        pbar.update(1)
+
+    pbar.close()
+    torch.save(best_model_state_dict, f"{out_dir}/{model_name}")
+    model.load_state_dict(best_model_state_dict)
+    with open(f"{out_dir}/loader.pkl", "wb") as f:
+        pickle.dump(loader_dict, f)
+    
+    return model, loader_dict
+
+
 def test(model, loader_dict, target_label, out_dir, positive_weights):
     
     # Evaluate the model on the test set
@@ -375,10 +457,10 @@ def test(model, loader_dict, target_label, out_dir, positive_weights):
     ax_roc.set_aspect("equal")
     ax_roc.set_title(f'AUC = {np.mean(aurocs):.3f}$\pm${np.std(aurocs):.3f}', fontsize=28)
 
-    fig_roc.savefig(f"{out_dir}/ROC-mil-{target_label}.pdf",dpi=300)
+    #fig_roc.savefig(f"{out_dir}/ROC-mil-{target_label}.pdf",dpi=300)
     fig_roc.savefig(f"{out_dir}/ROC-mil-{target_label}.png", dpi=300)
     fig_roc.savefig(f"{out_dir}/ROC-mil-{target_label}.svg")
-    fig_prc.savefig(f"{out_dir}/PRC-mil-{target_label}.pdf",dpi=300)
+    #fig_prc.savefig(f"{out_dir}/PRC-mil-{target_label}.pdf",dpi=300)
     
     # Save all predictions to see if manipulation will have an effect
     pred_dict = {"pat_ids":loader_dict["total"].dataset.get_patient_ids(),"preds":[], target_label:[]}
@@ -394,7 +476,7 @@ def test(model, loader_dict, target_label, out_dir, positive_weights):
         with torch.no_grad():
             logits = model(feats)
             #loss = criterion(logits,targets)
-            #test_loss += loss.item()
+            test_loss += loss.item()
         
             _, predicted_labels = torch.max(logits, dim=1)
             #total_test_correct += (predicted_labels == targets).sum().item()
@@ -409,3 +491,5 @@ def test(model, loader_dict, target_label, out_dir, positive_weights):
     total_df = pd.DataFrame(pred_dict)
     total_df.to_csv(f"{out_dir}/PMA_mil_preds_total.csv",index=False)
     print(f"Total nr predictions: {len(total_df)}; positives: {len(total_pred_labs[total_pred_labs==1])}")
+
+    return test_loss_avg

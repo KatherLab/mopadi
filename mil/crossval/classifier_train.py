@@ -119,9 +119,10 @@ for fold, (train_index, val_index) in enumerate(group_kf.split(X=all_train_files
     out_fold_dir = os.path.join(out_dir, f"fold_{fold}")
 
     model_path = os.path.join(out_fold_dir, "PMA_mil.pth")
-    #if os.path.exists(model_path):
-    #    print(f"Skipping fold {fold} as model already exists at {model_path}")
-    #    continue
+
+    if os.path.exists(model_path):
+       print(f"Skipping fold {fold} as model already exists at {model_path}")
+       continue
 
     if not os.path.exists(out_fold_dir):
         Path(out_fold_dir).mkdir(parents=True, exist_ok=True)
@@ -186,13 +187,18 @@ plot_multiple_decorated_roc_curves(
     ax=ax,
     y_trues=y_trues,
     y_scores=y_scores,
-    title=f"{conf.target_label}",
+    #title=f"{conf.target_label}",
     n_bootstrap_samples=None
 )
 
-ax.legend(loc='lower right', bbox_to_anchor=(0.95, 0.05), prop={'size': 18})
-ax.tick_params(axis='both', which='major', labelsize=18)
-ax.tick_params(axis='both', which='minor', labelsize=16)
+ax.set_xlabel(ax.get_xlabel(), fontsize=22)
+ax.set_ylabel(ax.get_ylabel(), fontsize=22)
+
+ax.set_title(ax.get_title(), fontsize=20)
+
+ax.legend(loc='lower right', bbox_to_anchor=(0.95, 0.05), prop={'size': 22})
+ax.tick_params(axis='both', which='major', labelsize=20)
+ax.tick_params(axis='both', which='minor', labelsize=18)
 
 plt.tight_layout()
 fig.savefig(os.path.join(out_dir, "roc.png"), dpi=300)
