@@ -12,3 +12,5 @@ data_prep/clini_tables/
 temp/
 *slurm*
 evals/
+*.sh
+*.csv
