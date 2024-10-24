@@ -7,15 +7,17 @@ ws_path = os.getenv("WORKSPACE_PATH")
 def lung_mil():
     conf = MILconfig()
     conf.nr_feats = 512
+    conf.num_epochs = 50
     conf.sab_ln = False
     conf.target_label = "Type"
     conf.target_dict = {"Lung_squamous_cell_carcinoma": 0, 
                         "Lung_adenocarcinoma": 1}
     return conf
 
-def msi_mil():
+def crc_mil():
     conf = MILconfig()    
     conf.nr_feats = 512
+    conf.num_epochs = 150
     conf.sab_ln = False
     conf.target_label = "isMSIH"
     conf.target_dict = {"nonMSIH": 0, "MSIH": 1}
@@ -24,6 +26,7 @@ def msi_mil():
 def brca_mil():
     conf = MILconfig()    
     conf.nr_feats = 512
+    conf.num_epochs = 200
     conf.sab_ln = False
     #conf.target_label = "PIK3CA_driver"
     conf.target_label = "BRCA_Pathology"
@@ -39,11 +42,13 @@ def liver_types_mil():
     conf = MILconfig()    
     conf.nr_feats = 512
     conf.target_label = "Type"
+    conf.num_epochs = 140
+    conf.sab_ln = False
     conf.target_dict = {"hcc": 0, "cca": 1}
     return conf
 
 
-def texture100k_autoenc_cls():
+def texture100k_linear_cls():
     conf = texture100k_autoenc()
     conf.train_mode = TrainMode.manipulate
     conf.manipulate_mode = "texture"
@@ -60,7 +65,7 @@ def texture100k_autoenc_cls():
     return conf
 
 
-def tcga_crc_autoenc_cls_msi():
+def tcga_crc_linear_cls_msi():
     conf = tcga_crc_autoenc()
     conf.train_mode = TrainMode.manipulate
     conf.manipulate_mode = "tcga_crc_msi"
@@ -163,10 +168,10 @@ def pancancer_linear_cls():
     return conf
 
  
-def lung_linear_autoenc_cls():
+def lung_linear_cls():
     conf = pancancer_autoenc()
     conf.train_mode = TrainMode.manipulate
-    conf.manipulate_mode = "lung-subtypes"
+    conf.manipulate_mode = "lung"
     conf.manipulate_znormalize = True
     conf.latent_infer_path = f"{ws_path}/mopadi/checkpoints/pancancer/autoenc/latent.pkl"
     conf.batch_size = 32
@@ -181,7 +186,7 @@ def lung_linear_autoenc_cls():
     return conf
 
 
-def liver_cancer_types_autoenc_cls():
+def liver_cancer_types_cls():
     conf = pancancer_autoenc()
     conf.train_mode = TrainMode.manipulate
     conf.manipulate_mode = "liver_cancer_types"

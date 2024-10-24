@@ -27,9 +27,9 @@ load_dotenv()
 ws_path = os.getenv("WORKSPACE_PATH")
 
 data_paths = {
-    'tcga_crc_512': os.path.join(ws_path, 'mopadi/datasets/tcga/crc/tcga_crc_512_lmdb'),
-    'tcga_brca_512': os.path.join(ws_path, 'mopadi/datasets/brca/tcga/tcga-brca-512.lmdb'),
-    'pancancer': '/mnt/bulk-dgx/laura/mopadi/datasets/japan-lmdb-train-new',
+    'tcga_crc_512': 'datasets/tcga_crc_512_lmdb-train',
+    'tcga_brca_512': 'datasets/brca/tcga/tcga-brca-512.lmdb',
+    'pancancer': 'datasets/pancancer/japan-lmdb-train-new',
 }
 
 
@@ -146,7 +146,7 @@ class TrainConfig(BaseConfig):
     # number of resblocks for the UNET
     net_num_input_res_blocks: int = None
     net_enc_num_cls: int = None
-    num_workers: int = 20
+    num_workers: int = 16 # 20 for dgx
     parallel: bool = False
     postfix: str = ''
     sample_size: int = 64
@@ -311,18 +311,21 @@ class TrainConfig(BaseConfig):
 
     def make_loader(self,
                     dataset,
-                    shuffle: bool,
+                    shuffle: bool = False,
                     num_worker: bool = None,
                     drop_last: bool = True,
                     batch_size: int = None,
-                    parallel: bool = False):
+                    parallel: bool = False,
+                    sampler = None
+                    ):
         if parallel and distributed.is_initialized():
             # drop last to make sure that there is no added special indexes
+            print("Parallel and distributed")
             sampler = DistributedSampler(dataset,
                                          shuffle=shuffle,
                                          drop_last=True)
-        else:
-            sampler = None
+        #else:
+        #    sampler = None
         return DataLoader(
             dataset,
             batch_size=batch_size or self.batch_size,

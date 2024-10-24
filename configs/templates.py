@@ -84,7 +84,7 @@ def texture100k_autoenc():
 def tcga_crc_autoenc():
     conf = autoenc_base()
     conf.data_name = 'tcga_crc'
-    conf.base_dir = f'{ws_path}/mopadi/checkpoints/tcga_crc_224x224'
+    conf.base_dir = f'{ws_path}/mopadi/checkpoints/tcga_crc_224x224/autoenc'
     conf.warmup = 0
     conf.total_samples = 200_000_000
     conf.img_size = 224
@@ -103,13 +103,13 @@ def tcga_crc_autoenc():
 def tcga_crc_512_autoenc():
     conf = autoenc_base()
     conf.data_name = 'tcga_crc_512'
-    conf.base_dir = f'{ws_path}/mopadi/checkpoints/crc/tcga_crc_512_autoenc'
+    conf.base_dir = f'{ws_path}/mopadi/checkpoints/crc/tcga_crc_512'
     conf.warmup = 0
     conf.total_samples = 70_000_000
     conf.sample_size = 16
     conf.img_size = 512
-    conf.batch_size = 16
-    conf.batch_size_eval = 16
+    conf.batch_size = 24
+    conf.batch_size_eval = 24
     conf.net_ch = 128
     conf.net_ch_mult = (1, 1, 2, 2, 4, 4)
     conf.net_enc_channel_mult = (1, 1, 2, 2, 4, 4, 4)
@@ -139,24 +139,6 @@ def tcga_brca_autoenc():
     conf.make_model_conf()
     return conf
 
-def tcga_brca_512_autoenc():
-    conf = autoenc_base()
-    conf.data_name = 'tcga_brca_512'
-    conf.base_dir = f'{ws_path}/mopadi/checkpoints/brca'
-    conf.warmup = 0
-    conf.total_samples = 100_000_000
-    conf.sample_size = 16
-    conf.img_size = 512
-    conf.batch_size = 16
-    conf.batch_size_eval = 16
-    conf.net_ch = 128
-    conf.net_ch_mult = (1, 1, 2, 2, 4, 4)
-    conf.net_enc_channel_mult = (1, 1, 2, 2, 4, 4, 4)
-    conf.eval_every_samples = 1_000_000
-    conf.eval_ema_every_samples = 1_000_000
-    # conf.scale_up_gpus(2)
-    conf.make_model_conf()
-    return conf
 
 def brain_autoenc():
     conf = autoenc_base()
@@ -179,7 +161,7 @@ def brain_autoenc():
 def pancancer_autoenc():
     conf = autoenc_base()
     conf.data_name = 'pancancer'
-    conf.base_dir = f'/mnt/bulk-dgx/laura/mopadi/checkpoints/pancancer'
+    conf.base_dir = f'{ws_path}/mopadi/checkpoints/pancancer/autoenc'
     conf.warmup = 0
     conf.total_samples = 200_000_000
     conf.img_size = 256
@@ -191,16 +173,6 @@ def pancancer_autoenc():
     conf.eval_every_samples = 1_000_000
     conf.eval_ema_every_samples = 1_000_000
     conf.make_model_conf()
-    return conf
-
-
-def pretrain_pancancer_autoenc():
-    conf = pancancer_autoenc()
-    conf.pretrain = PretrainConfig(
-        name='Pancancer',
-        path=f'/mnt/bulk-dgx/laura/mopadi/checkpoints/pancancer/last.ckpt',
-    )
-    conf.latent_infer_path = f'/mnt/bulk-dgx/laura/mopadi/checkpoints/pancancer/latent.pkl'
     return conf
 
 
@@ -238,9 +210,9 @@ def pretrain_tcga_crc_512_autoenc():
     conf = tcga_crc_512_autoenc()
     conf.pretrain = PretrainConfig(
         name='TCGA-CRC-512',
-        path=f'{ws_path}/mopadi/checkpoints/crc/tcga_crc_512_autoenc/last.ckpt',
+        path=f'{ws_path}/mopadi/checkpoints/crc/tcga_crc_512/last.ckpt',
     )
-    conf.latent_infer_path = f'{ws_path}/mopadi/checkpoints/crc/tcga_crc_512_autoenc/latent.pkl'
+    conf.latent_infer_path = f'{ws_path}/mopadi/checkpoints/crc/tcga_crc_512/latent.pkl'
     return conf
 
 
