@@ -1,4 +1,4 @@
-from train_linear_cls import ClsModel
+from linear_clf.train_linear_cls import ClsModel
 from torchvision import transforms
 import torch
 from configs.templates import *
@@ -25,6 +25,8 @@ class ImageManipulator:
             self.VALID_TARGET_CLASSES = TCGACRCBRAFAttrDataset.id_to_cls
         elif self.cls_config.manipulate_mode == 'brain':
             self.VALID_TARGET_CLASSES = BrainAttrDataset.id_to_cls
+        elif self.cls_config.manipulate_mode == 'liver_cancer_types':
+            self.VALID_TARGET_CLASSES = LiverCancerTypesClsDataset.id_to_cls
         else:
             print('Target classes could not be determined.')
         print(f"Valid target classes: {self.VALID_TARGET_CLASSES}")
@@ -70,8 +72,8 @@ class ImageManipulator:
         stochastic_latent = self.model.encode_stochastic(
             batch.to(self.device), semantic_latent, T=T_inv
         )
-        results["semantic latent"] = semantic_latent
-        results["stochastic latent"] = stochastic_latent
+        results["ori_feats"] = semantic_latent
+        results["stochastic_latent"] = stochastic_latent
 
         if self.cls_config.manipulate_mode == 'texture':
             cls_id = TextureAttrDataset.cls_to_id[target_class]
@@ -81,6 +83,8 @@ class ImageManipulator:
             cls_id = TCGACRCBRAFAttrDataset.cls_to_id[target_class]
         elif self.cls_config.manipulate_mode == 'brain':
             cls_id = BrainAttrDataset.cls_to_id[target_class]
+        elif self.cls_config.manipulate_mode == 'liver_cancer_types':
+             cls_id = LiverCancerTypesClsDataset.cls_to_id[target_class]
 
         if not self.cls_config.linear:
             semantic_latent = semantic_latent.detach()
@@ -105,6 +109,8 @@ class ImageManipulator:
             normalized_manipulated_semantic_latent
         )
 
+        results["manip_feat"] = manipulated_semantic_latent
+
         # Render Manipulated image
         manipulated_img = self.model.render(stochastic_latent, manipulated_semantic_latent, T=T_step)[0]
 
@@ -114,8 +120,8 @@ class ImageManipulator:
         except:
             out_path = os.path.join(save_path,  f"original_{image_index}.png")
         original_img_rgb = convert2rgb(self.image_dataset[image_index]["img"])
-        results["original image"] = original_img_rgb
-        results["original image path"] = out_path
+        results["ori_img"] = original_img_rgb
+        results["ori_img_path"] = out_path
         save_image(original_img_rgb, str(out_path))
         #print(f"Original image saved to: {out_path}")
 
@@ -126,8 +132,8 @@ class ImageManipulator:
             save_manip_path = os.path.join(save_path, f"Image_{image_index}_manipulated_to_{target_class}_amplitude_{manipulation_amplitude}.png")
 
         manipulated_img_rgb = convert2rgb(manipulated_img)
-        results["manipulated image"] = manipulated_img_rgb
-        results["manipulated image path"] = save_manip_path
+        results["manip_img"] = manipulated_img_rgb
+        results["manip_img_path"] = save_manip_path
         self.save_image(manipulated_img_rgb, save_manip_path)
         #print(f"Manipulated image saved to: {save_manip_path}")
         return results
@@ -137,13 +143,17 @@ class ImageManipulator:
         image.save(save_path)
 
 
-def compute_structural_similarity(reconstructed_img, image_original_tensor):
+def compute_structural_similarity(reconstructed_img, image_original_tensor, out_file_dir=None):
     reconstructed_img_np = reconstructed_img.permute(2, 1, 0).cpu().numpy()
     image_original = image_original_tensor.permute(2, 1, 0).cpu().detach().numpy()
+
+    #print(f"Shape of the original image: {image_original.shape}, and range: [{image_original.min()}, {image_original.max()}]")
+    #print(f"Shape of the reconstructed image: {reconstructed_img_np.shape}, and range: [{reconstructed_img_np.min()}, {reconstructed_img_np.max()}]")
 
     if image_original.min() < 0:
         # transform image data that is initially in the range [-1, 1] to the range [0, 1]
         image_original = (image_original + 1) / 2
+        #print(f"Adjusted range of the original image: {image_original.min()}, {image_original.max()}")
 
     # convert to grayscale
     before_gray = cv2.cvtColor(image_original, cv2.COLOR_BGR2GRAY)
@@ -151,19 +161,35 @@ def compute_structural_similarity(reconstructed_img, image_original_tensor):
 
     # SSIM
     (ssim, diff) = structural_similarity(before_gray, after_gray, full=True, data_range=before_gray.max() - before_gray.min())
-    print("Image Similarity: {:.4f}%".format(ssim * 100))
+    #print("Image Similarity: {:.4f}%".format(ssim * 100))
     diff = (diff * 255).astype("uint8")
     
     # MEAN SQUARE ERROR (MSE)
     mse = mean_squared_error(before_gray, after_gray)
-    print(f"MSE: {mse:.4f}")
+    #print(f"MSE: {mse:.4f}")
 
     # MULTI-SCALE SSIM
+    #print(f"Shapes and ranges before computing SSIM: reconstructed image {reconstructed_img.unsqueeze(0).size()}, [{reconstructed_img.unsqueeze(0).min()}, {reconstructed_img.unsqueeze(0).max()}], and original: {image_original_tensor.unsqueeze(0).size()}, [{image_original_tensor.unsqueeze(0).min()}, {image_original_tensor.unsqueeze(0).max()}]")
+
+    image_original_tensor = image_original_tensor.unsqueeze(0)
+    if image_original_tensor.min() < 0:
+        # transform image data that is initially in the range [-1, 1] to the range [0, 1]
+        image_original_tensor = (image_original_tensor.cpu() + 1) / 2
+        #print(f"Adjusted original img range before computing SSIM: [{image_original_tensor.min()}, {image_original_tensor.max()}]")
+
+
     ms_ssim = MultiScaleStructuralSimilarityIndexMeasure()
-    ms_ssim_res = ms_ssim(reconstructed_img.unsqueeze(0),  image_original_tensor.unsqueeze(0))
-    print(f"MultiScale Structural Similarity: {ms_ssim_res}")
+    ms_ssim_res = ms_ssim(reconstructed_img.unsqueeze(0),  image_original_tensor)
+    #print(f"MultiScale Structural Similarity: {ms_ssim_res:.4f}")
     # diff2 = ImageChops.difference(Image.fromarray((flipped * 255).astype(np.uint8)), Image.fromarray((manip_img * 255).astype(np.uint8)))
-    print("------------------------------------------------")
+    #print("------------------------------------------------")
+    if out_file_dir is not None:
+        with open(os.path.join(out_file_dir, "ssim_info.txt"), 'a') as f:
+            f.write("\nImage Similarity: {:.4f}%".format(ssim * 100))
+            f.write(f"\nMSE: {mse:.4f}")
+            f.write(f"\nMultiScale Structural Similarity: {ms_ssim_res:.4f}")
+            f.write("\n------------------------------------------------\n")
+
     return diff, ssim, mse, ms_ssim_res # diff2
 
 
