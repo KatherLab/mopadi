@@ -6,6 +6,8 @@ MoPaDi combines [Diffusion Autoencoders](https://openaccess.thecvf.com/content/C
 
 ![image info](./images/fig1_paper.png)
 
+For segmentation of 6 cell types to quantify changes in original and counterfactual images, [DeepCMorph](https://github.com/aiff22/DeepCMorph) pretrained models were used.
+
 ## Getting started
 
 Create a virtual environment, e.g. with conda or mamba, clone the repository, and install required packages:
