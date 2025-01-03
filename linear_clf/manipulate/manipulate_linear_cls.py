@@ -15,6 +15,8 @@ class ImageManipulator:
         self.cls_config = cls_config
         self.model = self.load_model(autoenc_config, autoenc_path)
         self.classifier = self.load_cls_model(cls_config, cls_path)
+        self.normalizer = transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
+
         print("Both models loaded successfully.")
 
         if self.cls_config.manipulate_mode == 'texture':
@@ -47,7 +49,7 @@ class ImageManipulator:
         cls_model.to(self.device)
         return cls_model
 
-    def manipulate_image(self, 
+    def manipulate_dataset(self, 
                         image_index, 
                         target_class, 
                         save_path=os.path.join(os.getcwd(), "results"), 
@@ -61,22 +63,60 @@ class ImageManipulator:
         if target_class not in self.VALID_TARGET_CLASSES:
             raise ValueError(f"Invalid target class. Valid options are: {self.VALID_TARGET_CLASSES}")
 
-        batch = self.image_dataset[image_index]["img"][None]
+        batch = self.image_dataset[image_index]["img"][None]  # batch shape needs to be torch.Size([1, 3, 224, 224])
+
+        save_fname = self.image_dataset[image_index]["filename"].split(".")[0] + "_original.png"
+        save_fname_manip = self.image_dataset[image_index]["filename"].split(".")[0] + f"_manipulated_to_{target_class}_amplitude_{manipulation_amplitude}.png"
+        
+        return self.manipulate(batch, target_class, manipulation_amplitude, save_path, save_fname_ori, save_fname_manip, T_step, T_inv)
+
+    def manipulate_image(self, 
+                        img, 
+                        target_class,
+                        manipulation_amplitude, 
+                        save_path=os.path.join(os.getcwd(), "results"), 
+                        save_fname_ori = "original.png",
+                        save_fname_manip = None,
+                        T_step=100, 
+                        T_inv=200):
+
+        transform = [transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
+        transform = transforms.Compose(transform)
+        img = transform(img).unsqueeze(0)
+
+        return self.manipulate(img, target_class, manipulation_amplitude, save_path, save_fname_ori, save_fname_manip, T_step, T_inv)
+
+    def manipulate(self,
+                   img,
+                   target_class, 
+                   manipulation_amplitude,
+                   save_path, 
+                   save_fname_ori,
+                   save_fname_manip,
+                   T_step=100, 
+                   T_inv=200):
+
+        if save_fname_manip is None:
+            save_fname_manip = f"manipulated_to_{target_class}_amplitude_{manipulation_amplitude}.png"
+
+        if target_class not in self.VALID_TARGET_CLASSES:
+            raise ValueError(f"Invalid target class. Valid options are: {self.VALID_TARGET_CLASSES}")
 
         if not os.path.exists(save_path):
             os.makedirs(save_path, exist_ok=True)
 
         # Image encoding and manipulation steps
         results = {}
-        semantic_latent = self.model.encode(batch.to(self.device))
+        semantic_latent = self.model.encode(img.to(self.device))
         stochastic_latent = self.model.encode_stochastic(
-            batch.to(self.device), semantic_latent, T=T_inv
+            img.to(self.device), semantic_latent, T=T_inv
         )
         results["ori_feats"] = semantic_latent
         results["stochastic_latent"] = stochastic_latent
 
         if self.cls_config.manipulate_mode == 'texture':
             cls_id = TextureAttrDataset.cls_to_id[target_class]
+            target_list = TextureAttrDataset.id_to_cls
         elif self.cls_config.manipulate_mode == 'tcga_crc_msi':
             cls_id = TcgaCrcMsiAttrDataset.cls_to_id[target_class]
         elif self.cls_config.manipulate_mode == 'tcga_crc_braf':
@@ -84,7 +124,7 @@ class ImageManipulator:
         elif self.cls_config.manipulate_mode == 'brain':
             cls_id = BrainAttrDataset.cls_to_id[target_class]
         elif self.cls_config.manipulate_mode == 'liver_cancer_types':
-             cls_id = LiverCancerTypesClsDataset.cls_to_id[target_class]
+            cls_id = LiverCancerTypesClsDataset.cls_to_id[target_class]
 
         if not self.cls_config.linear:
             semantic_latent = semantic_latent.detach()
@@ -115,27 +155,47 @@ class ImageManipulator:
         manipulated_img = self.model.render(stochastic_latent, manipulated_semantic_latent, T=T_step)[0]
 
         # Save the original image
-        try:
-            out_path = os.path.join(save_path, self.image_dataset[image_index]["filename"].split(".")[0] + "_original.png")
-        except:
-            out_path = os.path.join(save_path,  f"original_{image_index}.png")
-        original_img_rgb = convert2rgb(self.image_dataset[image_index]["img"])
+        out_path = os.path.join(save_path, save_fname_ori)
+
+        original_img_rgb = convert2rgb(img)
         results["ori_img"] = original_img_rgb
         results["ori_img_path"] = out_path
         save_image(original_img_rgb, str(out_path))
         #print(f"Original image saved to: {out_path}")
 
-        # Save and return manipulated image path
-        try:
-            save_manip_path = os.path.join(save_path, self.image_dataset[image_index]["filename"].split(".")[0] + f"_manipulated_to_{target_class}_amplitude_{manipulation_amplitude}.png")
-        except:
-            save_manip_path = os.path.join(save_path, f"Image_{image_index}_manipulated_to_{target_class}_amplitude_{manipulation_amplitude}.png")
+        # Save manipulated image
+        save_manip_path = os.path.join(save_path, save_fname_manip)
 
         manipulated_img_rgb = convert2rgb(manipulated_img)
-        results["manip_img"] = manipulated_img_rgb
+        results["manip_img"] = manipulated_img
+        results["manip_img_rgb"] = manipulated_img_rgb
         results["manip_img_path"] = save_manip_path
         self.save_image(manipulated_img_rgb, save_manip_path)
         #print(f"Manipulated image saved to: {save_manip_path}")
+
+
+        with torch.no_grad():
+            self.classifier.ema_classifier.eval()
+
+            # normalize rendered img 
+            manip_img_norm = self.normalizer(manipulated_img.unsqueeze(0).cuda().float())
+
+            # extract features from manipulated img
+            manip_img_latent = self.model.ema_model.encoder(manip_img_norm)
+
+            # normalize extracted features
+            manip_img_latent_norm = self.classifier.normalize(manip_img_latent)
+
+            # pass through the classifier
+            output = self.classifier.ema_classifier.forward(manip_img_latent_norm)                
+            pred = torch.softmax(output, dim=1)
+            _, max_index = torch.max(pred, 1)
+            predicted_class = target_list[max_index.item()]
+
+            results["target_list"] = target_list
+            results["preds"] = f"{[f'{p:.3f}' for p in pred.cpu().numpy().flatten()]}"
+            results["pred_class"] = predicted_class
+
         return results
 
     def save_image(self, image_tensor, save_path):

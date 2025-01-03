@@ -8,7 +8,7 @@ from PIL import Image
 import torch
 from torchvision import transforms
 from torch.utils.data import DataLoader
-from train_linear_cls import ClsModel
+from linear_clf.train_linear_cls import ClsModel
 from mil.utils import *
 
 from configs.templates import *
@@ -70,13 +70,13 @@ class Tester():
 if __name__ == "__main__":
 
     autoenc_path = "checkpoints/texture100k/last.ckpt"
-    cls_checkpoint_dir = "checkpoints/texture100k/texture100k_autoenc_cls/last.ckpt"
-    results_dir = "images/example_norm_to_tumor/NORM-TCGA-YLVCMEHK"
+    cls_checkpoint_dir = "checkpoints/texture100k/texture100k_clf/last.ckpt"
+    results_dir = "images/example_norm_to_tumor"
 
-    test_man_amps = ["original", "0.2", "0.4", "0.6", "0.8", "1.0", "1.2", "1.4"]
+    test_man_amps = ["original", "0.2", "0.4", "0.6", "0.8", "1.0"]
 
     conf = texture100k_autoenc()
-    cls_conf = texture100k_autoenc_cls()
+    cls_conf = texture100k_linear_cls()
 
     transform = [transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
     transform = transforms.Compose(transform)
