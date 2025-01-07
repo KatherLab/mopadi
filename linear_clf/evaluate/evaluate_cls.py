@@ -175,7 +175,7 @@ if __name__ == "__main__":
                                 transforms.ToTensor(),
                                 transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
                                 ]))
-    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True, num_workers=1)
+    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=1)
     tester.test(test_loader)
     """
 
@@ -203,7 +203,7 @@ if __name__ == "__main__":
                                 transforms.ToTensor(),
                                 transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
                                 ]))
-    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True, num_workers=1)
+    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=1)
     tester.test(test_loader)
     """
 
