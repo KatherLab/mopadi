@@ -1,2 +1,4 @@
 *
 !.gitignore
+!patient_splits/
+!patient_splits/**
