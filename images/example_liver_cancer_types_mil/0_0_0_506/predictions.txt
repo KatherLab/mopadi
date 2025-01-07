@@ -1,0 +1,30 @@
+Original image prediction (LIHC, CHOL): ['0.000', '1.000']
+
+Manipulation amplitude: 0.02
+Pred manip feat (LIHC, CHOL): ['1.000', '0.000']
+Pred rendered img (LIHC, CHOL): ['0.997', '0.001']
+--------------------------------------------------
+Original image prediction (LIHC, CHOL): ['0.000', '1.000']
+
+Manipulation amplitude: 0.04
+Pred manip feat (LIHC, CHOL): ['1.000', '0.000']
+Pred rendered img (LIHC, CHOL): ['1.000', '0.000']
+--------------------------------------------------
+Original image prediction (LIHC, CHOL): ['0.000', '1.000']
+
+Manipulation amplitude: 0.06
+Pred manip feat (LIHC, CHOL): ['1.000', '0.000']
+Pred rendered img (LIHC, CHOL): ['1.000', '0.000']
+--------------------------------------------------
+Original image prediction (LIHC, CHOL): ['0.000', '1.000']
+
+Manipulation amplitude: 0.08
+Pred manip feat (LIHC, CHOL): ['1.000', '0.000']
+Pred rendered img (LIHC, CHOL): ['1.000', '0.000']
+--------------------------------------------------
+Original image prediction (LIHC, CHOL): ['0.000', '1.000']
+
+Manipulation amplitude: 0.1
+Pred manip feat (LIHC, CHOL): ['1.000', '0.000']
+Pred rendered img (LIHC, CHOL): ['1.000', '0.000']
+--------------------------------------------------
