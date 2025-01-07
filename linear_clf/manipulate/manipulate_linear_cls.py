@@ -125,6 +125,7 @@ class ImageManipulator:
             cls_id = BrainAttrDataset.cls_to_id[target_class]
         elif self.cls_config.manipulate_mode == 'liver_cancer_types':
             cls_id = LiverCancerTypesClsDataset.cls_to_id[target_class]
+            target_list = LiverCancerTypesClsDataset.id_to_cls
 
         if not self.cls_config.linear:
             semantic_latent = semantic_latent.detach()

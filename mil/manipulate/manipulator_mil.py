@@ -3,6 +3,9 @@ from torchvision import transforms
 from configs.templates import *
 from configs.templates_cls import *
 from mil.utils import *
+from torchmetrics.image import MultiScaleStructuralSimilarityIndexMeasure
+from skimage.metrics import structural_similarity, mean_squared_error
+import cv2
 
 
 class ImageManipulator:
@@ -27,10 +30,8 @@ class ImageManipulator:
                        #latent_infer_path
                     ):
         
-        state_dict_path = os.path.join(mil_path)
-        
         cls_model = Classifier(conf_cls.dim, conf_cls.num_heads, conf_cls.num_seeds, conf_cls.num_classes)
-        weights = torch.load(state_dict_path)
+        weights = torch.load(mil_path)
         cls_model.load_state_dict(weights)
         cls_model = cls_model.to(self.device)
 
@@ -161,7 +162,7 @@ class ImageManipulator:
 
                 # saving paths -------------------------------------------
                 try:
-                    fname = metadata[top_idx.item()]
+                    fname = metadata[top_idx.item()].split(".")[0]
                 except IndexError:
                     print(f"Features for the top tile {top_idx.item()} for patient {patient_name} not found. Patient has {len(metadata)} features.")
                     continue
@@ -234,3 +235,59 @@ def convert2rgb(img):
         # transform pixel values into the [0, 1] range
         convert_img = (convert_img + 1) / 2
     return convert_img.cpu()
+
+
+def compute_structural_similarity(reconstructed_img, image_original, out_file_dir=None):
+    """
+    Compute the Structural Similarity Index (SSIM) [1], Mean Square Error and Multi-scale SSIM [2]
+    between the reconstructed image and the original image.
+
+    Args:
+        reconstructed_img (PIL Image): Reconstructed image
+        image_original (PIL Image): Original image
+        out_file_dir (str): Directory to save the computed metrics
+    
+    References:
+    [1] https://scikit-image.org/docs/dev/auto_examples/transform/plot_ssim.html
+    [2] https://lightning.ai/docs/torchmetrics/stable/image/multi_scale_structural_similarity.html
+    """
+
+    reconstructed_img_np = np.array(reconstructed_img)
+    image_original_np = np.array(image_original)
+    #print(f"Shape of the original image: {image_original_np.shape}, and range: [{image_original_np.min()}, {image_original_np.max()}]")
+    #print(f"Shape of the reconstructed image: {reconstructed_img_np.shape}, and range: [{reconstructed_img_np.min()}, {reconstructed_img_np.max()}]")
+
+    # SSIM
+    (ssim, diff) = structural_similarity(image_original_np, reconstructed_img_np, full=True, data_range=image_original_np.max() - image_original_np.min(), multichannel = True, channel_axis = 2)
+    print("Image Similarity: {:.3f}%".format(ssim * 100))
+    diff = (diff * 255).astype("uint8")
+    diff_gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
+    
+    # MEAN SQUARE ERROR (MSE)
+    # convert to grayscale
+    image_original_gray = cv2.cvtColor(image_original_np, cv2.COLOR_BGR2GRAY)
+    reconstructed_img_gray = cv2.cvtColor(reconstructed_img_np, cv2.COLOR_BGR2GRAY)
+
+    image_original_normalized = image_original_gray.astype("float32") / 255.0
+    reconstructed_img_normalized = reconstructed_img_gray.astype("float32") / 255.0
+
+    mse = mean_squared_error(image_original_normalized, reconstructed_img_normalized)
+    print(f"MSE: {mse:.4f}")
+
+    # MULTI-SCALE SSIM
+    image_original_tensor = torch.tensor(image_original_normalized).unsqueeze(0).unsqueeze(0).float()
+    reconstructed_img_tensor = torch.tensor(reconstructed_img_normalized).unsqueeze(0).unsqueeze(0).float()
+
+    ms_ssim = MultiScaleStructuralSimilarityIndexMeasure()
+    ms_ssim_res = ms_ssim(reconstructed_img_tensor,  image_original_tensor) * 100
+    print(f"MultiScale Structural Similarity: {ms_ssim_res:.3f}%")
+    print("-----------------------------------------------")
+
+    if out_file_dir is not None:
+        with open(os.path.join(out_file_dir, "ssim_info.txt"), 'a') as f:
+            f.write("\nImage Similarity: {:.3f}%".format(ssim * 100))
+            f.write(f"\nMSE: {mse:.3f}")
+            f.write(f"\nMultiScale Structural Similarity: {ms_ssim_res:.3f}")
+            f.write("\n------------------------------------------------\n")
+
+    return diff_gray, ssim, mse, ms_ssim_res
