@@ -885,14 +885,15 @@ def train(conf: TrainConfig, gpus, nodes=1, mode: str = 'train'):
     checkpoint_path = f'{conf.logdir}/last.ckpt'
     print('ckpt path:', checkpoint_path)
     if os.path.exists(checkpoint_path):
-        resume = checkpoint_path
+        resume = True
         print(f'resuming training, model loaded from {resume}!')
     else:
         if conf.continue_from is not None:
             # continue from a checkpoint
-            resume = conf.continue_from.path
+            checkpoint_path = conf.continue_from.path
+            resume = True
         else:
-            resume = None
+            resume = False
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=conf.logdir,
                                              name=None,
@@ -921,7 +922,7 @@ def train(conf: TrainConfig, gpus, nodes=1, mode: str = 'train'):
     print(f'Accelerator: {accelerator}, strategy: {strategy}, devices: {gpus}, num nodes: {nodes}')
     trainer = pl.Trainer(
         max_steps=conf.total_samples // conf.batch_size_effective,
-        # resume_from_checkpoint=resume,  # older pytorch-lightning version (e.g. 2.0.6)
+        # resume_from_checkpoint=checkpoint_path,  # older pytorch-lightning version (e.g. 2.0.6)
         # gpus=gpus,                      # older pytorch-lightning version (e.g. 2.0.6)
         devices=gpus,                     # only for newer pytorch-lightning versions (2.1.1)
         strategy=strategy,
@@ -941,7 +942,10 @@ def train(conf: TrainConfig, gpus, nodes=1, mode: str = 'train'):
     )
 
     if mode == 'train':
-        trainer.fit(model, ckpt_path=resume)
+        if resume:
+            trainer.fit(model, ckpt_path=checkpoint_path)
+        else:
+            trainer.fit(model)
     elif mode == 'eval':
         # load the latest checkpoint
         # perform lpips
