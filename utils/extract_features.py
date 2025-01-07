@@ -27,7 +27,7 @@ class ImageFolder(Dataset):
             [
                 p for ext in exts 
                 for p in Path(folder).glob(f"**/*.{ext}")
-                if not any(part.startswith(".") for part in p.parts)
+                if not any(part.startswith(".") for part in p.parts) and not any("slide" in part for part in p.parts)
             ]
         )
         transform = [transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
