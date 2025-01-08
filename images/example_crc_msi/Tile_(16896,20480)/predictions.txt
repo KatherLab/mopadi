@@ -1,0 +1,24 @@
+Original image prediction (nonMSIH, MSIH): ['0.074', '0.978']
+
+Manipulation amplitude: 0.02
+Pred manip feat (nonMSIH, MSIH): ['0.699', '0.232']
+Pred rendered img (nonMSIH, MSIH): ['0.319', '0.804']
+--------------------------------------------------
+Original image prediction (nonMSIH, MSIH): ['0.074', '0.978']
+
+Manipulation amplitude: 0.04
+Pred manip feat (nonMSIH, MSIH): ['1.000', '0.000']
+Pred rendered img (nonMSIH, MSIH): ['0.565', '0.543']
+--------------------------------------------------
+Original image prediction (nonMSIH, MSIH): ['0.074', '0.978']
+
+Manipulation amplitude: 0.06
+Pred manip feat (nonMSIH, MSIH): ['1.000', '0.000']
+Pred rendered img (nonMSIH, MSIH): ['0.843', '0.193']
+--------------------------------------------------
+Original image prediction (nonMSIH, MSIH): ['0.074', '0.978']
+
+Manipulation amplitude: 0.08
+Pred manip feat (nonMSIH, MSIH): ['1.000', '0.000']
+Pred rendered img (nonMSIH, MSIH): ['0.975', '0.028']
+--------------------------------------------------
