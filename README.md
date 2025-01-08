@@ -17,6 +17,9 @@ mamba create -n mopadi python=3.8 -c conda-forge
 pip install -r requirements.txt
 ```
 
+Then obtain access to pretrained models on [Hugging Face](https://huggingface.co/KatherLab/MoPaDi).
+Once the environment is set up and access to models has been granted, you can run the example notebooks (all the necessary data for these examples has been provided).
+
 ## Pretrained Models
 
 Pretrained models can be found on [Hugging Face](https://huggingface.co/KatherLab/MoPaDi). If you have already obtained access to models in that repository, automatic download is set up in example notebooks. Included models are:
@@ -43,9 +46,7 @@ This project was built upon a [DiffAE](https://github.com/phizaz/diffae) (MIT li
 ## Reference
 If you find our work useful for your research or if you use parts of the code please consider citing our [preprint](https://www.biorxiv.org/content/10.1101/2024.10.29.620913v1):
 
-```
-Žigutytė, L., Lenz, T., Han, T., Hewitt, K. J., Reitsam, N. G., Foersch, S., ... & Kather, J. N. (2024). Counterfactual Diffusion Models for Mechanistic Explainability of Artificial Intelligence Models in Pathology. bioRxiv, 2024.
-```
+> Žigutytė, L., Lenz, T., Han, T., Hewitt, K. J., Reitsam, N. G., Foersch, S., ... & Kather, J. N. (2024). Counterfactual Diffusion Models for Mechanistic Explainability of Artificial Intelligence Models in Pathology. bioRxiv, 2024.
 
 ```
 @misc{zigutyte2024mopadi,
