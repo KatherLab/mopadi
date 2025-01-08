@@ -22,10 +22,10 @@ pip install -r requirements.txt
 Pretrained models can be found on [Hugging Face](https://huggingface.co/KatherLab/MoPaDi). If you have already obtained access to models in that repository, automatic download is set up in example notebooks. Included models are:
 
 <ol type="a">
-  <li>Tissue classes autoencoding diffusion model (trained on 224x224pxNCT-CRC-HE-100K dataset [(Kather et al., 2018)](https://zenodo.org/records/1214456)) + linear 9 classes classifier (Adipose (ADI), background (BACK), debris (DEB), lymphocytes (LYM), mucus (MUC), smooth muscle (MUS), normal colon mucosa (NORM), cancer-associated stroma (STR), colorectal adenocarcinoma epithelium (TUM));</li>
-  <li>Colorectal (CRC) cancer autoencoding diffusion model (trained on tumor regions from TCGA CRC cohort) + microsatellite instability (MSI) status MIL classifier (MSI high [MSIH] vs. nonMSIH);</li>
-  <li>Breast cancer autoencoding diffusion model (trained on tumor regions from TCGA BRCA cohort) + breast cancer type (invasive lobular carcinoma [ILC] vs. invasive ductal carcinoma [IDC]) and E2 center MIL classifiers;</li>
-  <li>Pancancer autoencoding diffusion model (trained on histology images from uniform tumor regions in TCGA WSI [(Komura & Ishikawa, 2021)](https://zenodo.org/records/5889558)) + liver cancer types (hepatocellular carcinoma [HCC] vs. cholangiocarcinoma [CCA]) MIL & linear classifier and lung cancer types (lung adenocarcinoma [LUAD] vs. lung squamous cell carcinoma [LUSC]) MIL & linear classifier.</li>
+  <li>Tissue classes autoencoding diffusion model (trained on 224x224px tiles from NCT-CRC-HE-100K dataset <a href="https://zenodo.org/records/1214456">(Kather et al., 2018)</a>) + linear 9 classes classifier (Adipose (ADI), background (BACK), debris (DEB), lymphocytes (LYM), mucus (MUC), smooth muscle (MUS), normal colon mucosa (NORM), cancer-associated stroma (STR), colorectal adenocarcinoma epithelium (TUM));</li>
+  <li>Colorectal (CRC) cancer autoencoding diffusion model (trained on 512 x 512 px tiles (0.5 microns per px, MPP) from tumor regions from TCGA CRC cohort) + microsatellite instability (MSI) status MIL classifier (MSI high [MSIH] vs. nonMSIH);</li>
+  <li>Breast cancer autoencoding diffusion model (trained on 512 x 512 px tiles (0.5 MPP) from tumor regions from TCGA BRCA cohort) + breast cancer type (invasive lobular carcinoma [ILC] vs. invasive ductal carcinoma [IDC]) and E2 center MIL classifiers;</li>
+  <li>Pancancer autoencoding diffusion model (trained on 256 x 256 px tiles (varying MPP) from histology images from uniform tumor regions in TCGA WSI <a href="https://zenodo.org/records/5889558">(Komura & Ishikawa, 2021)</a>) + liver cancer types (hepatocellular carcinoma [HCC] vs. cholangiocarcinoma [CCA]) MIL & linear classifiers and lung cancer types (lung adenocarcinoma [LUAD] vs. lung squamous cell carcinoma [LUSC]) MIL & linear classifiers.</li>
 </ol>
 
 ![image info](./images/models.png)
@@ -54,3 +54,5 @@ If you find our work useful for your research or if you use parts of the code pl
       eprint={2024.10.29.620913},
       archivePrefix={bioRxiv},
       url={https://www.biorxiv.org/content/10.1101/2024.10.29.620913v1}, 
+}
+```
