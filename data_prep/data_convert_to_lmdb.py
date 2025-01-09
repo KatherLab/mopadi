@@ -162,15 +162,16 @@ if __name__ == "__main__":
     """
 
     # TCGA CRC 512x512 ------------------------------------------------------------------------------------
-    map_size=140 * 1024**3
-    in_path = f"/mnt/bulk-ganymede/laura/deep-liver/data/TCGA-CRC/tiles_512x512_05mpp"
-    out_path = f"/mnt/bulk-ganymede/laura/deep-liver/data/TCGA-CRC/tcga_crc_512_lmdb-test"
-    test_patients_file = f"/mnt/bulk-mars/laura/diffae/data/TCGA-CRC/new_split/data_info.json"
+    #map_size=140 * 1024**3
+    #in_path = "/mnt/bulk-dgx/laura/mopadi/data/TCGA_CRC_tiles_512x512_only_tumor-all"
+    #out_path = "/mnt/bulk-dgx/laura/mopadi/datasets/tcga_crc_512_lmdb-test"
+    #test_patients_file = f"/mnt/bulk-mars/laura/diffae/data/TCGA-CRC/new_split/data_info.json"
 
     # BRAIN 224x224 ----------------------------------------------------------------------------------------
-    # in_path = f"{ws_path}/data/brain"
-    # out_path = f"{ws_path}/mopadi/datasets/brain"
-    # map_size = 10 * 1024**3
+    in_path = f"{ws_path}/data/brain/brain-full-dataset-cache"
+    out_path = f"{ws_path}/mopadi/datasets/brain/brain-train-new"
+    test_patients_file = f"{ws_path}/data/brain/test_train_split.txt"
+    map_size = 140 * 1024**3
 
     # JAPAN 224x224 --------------------------------------------------------------------------------------
     #in_path = f"/mnt/bulk-mars/laura/diffae/data/japan/new-all"
