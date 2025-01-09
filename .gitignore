@@ -11,6 +11,12 @@ data_prep/**.ipynb
 data_prep/clini_tables/
 temp/
 *slurm*
+*.out
 evals/
 *.sh
 *.csv
+utils/dimred/
+notebooks/dev/*
+utils/reconstruct_1k_images_texture.py
+mil/extval_classifier_lung.py
+mil/get_top_tiles_lung.py
