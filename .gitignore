@@ -16,6 +16,7 @@ evals/
 *.sh
 *.csv
 utils/dimred/
+utils/extract-old/
 notebooks/dev/*
 utils/reconstruct_1k_images_texture.py
 mil/extval_classifier_lung.py
