@@ -84,13 +84,12 @@ if not test_only:
     valid_patient_ids = valid_patient_df['PATIENT'].unique()
     assert len(valid_patient_ids) != 0, "No patients with valid values found..."
 
+    train_files = np.random.RandomState(seed=42).permutation([os.path.join(feat_path, f) for f in os.listdir(feat_path)]).tolist()
+    test_files = np.random.RandomState(seed=42).permutation([os.path.join(feat_path_test, f) for f in os.listdir(feat_path_test)]).tolist()
+
     # filter feature files based on valid patient IDs
     train_files = [f for f in train_files if extract_patient_id(f.split('/')[-1], index=fname_index) in valid_patient_ids]
     test_files = [f for f in test_files if extract_patient_id(f.split('/')[-1], index=fname_index) in valid_patient_ids]
-
-    # filter feature files based on valid patient IDs
-    train_files = [f for f in train_files if extract_patient_id(f.split('/')[-1]) in valid_patient_ids]
-    test_files = [f for f in test_files if extract_patient_id(f.split('/')[-1]) in valid_patient_ids]
 
     dataset = FeatDataset(train_files+test_files, clini_table, conf.target_label, conf.target_dict, conf.nr_feats, fname_index=fname_index)
     trainset = FeatDataset(train_files, clini_table, conf.target_label, conf.target_dict, conf.nr_feats, fname_index=fname_index)
