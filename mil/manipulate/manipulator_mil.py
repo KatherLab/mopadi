@@ -9,7 +9,7 @@ import cv2
 
 
 class ImageManipulator:
-    def __init__(self, autoenc_config, autoenc_path, mil_path, dataset, conf_cls, device="cuda:0"):    #def __init__(self, autoenc_config, autoenc_path, mil_path, latent_infer_path, dataset, conf_cls, device="cuda:0"):
+    def __init__(self, autoenc_config, autoenc_path, mil_path, dataset, conf_cls, device="cuda:0"):
         self.device = device
         self.model = self._load_model(autoenc_config, autoenc_path)
         self.classifier = self._load_cls_model(conf_cls, mil_path)#, latent_infer_path)
@@ -148,7 +148,7 @@ class ImageManipulator:
                     except IndexError:
                         print(f"Features for the top tile {top_idx.item()} for patient {patient_name} not found. Patient has {len(metadata)} features.")
                         continue
-                    print(f"Filename: {fname}")
+                    #print(f"Filename: {fname}")
 
                     out_dir = os.path.join(save_path, fname.split(".")[0])
                     if not os.path.exists(out_dir):

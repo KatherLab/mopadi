@@ -3,7 +3,7 @@ import os
 
 from torchvision import transforms
 import configs.templates_cls as configs
-from dataset import TCGADataset
+from dataset import *
 from pathlib import Path
 
 from mil.manipulate.manipulator_mil import ImageManipulator
@@ -37,6 +37,7 @@ if __name__=="__main__":
     parser.add_argument('--target_label', type=str, required=False, default=None, help='Target label if differs from the one in conf')
     parser.add_argument('--num_workers', type=int, default=8, help='Number of workers for data loading')
     parser.add_argument('--target_dict', type=str, required=False, default=None, help='Target dictionary for the configuration (JSON format) if different')
+    parser.add_argument('--fname_index', type=int, default=3, help='How to split filename to get patient ID')
 
     args = parser.parse_args()
 
@@ -52,6 +53,7 @@ if __name__=="__main__":
     filename = args.fname
     target_label = args.target_label
     target_dict = args.target_dict
+    fname_index = args.fname_index
 
     if args.patients:
         patients = args.patients.split(',')
@@ -114,12 +116,17 @@ if __name__=="__main__":
         if patients is not None:
             if patient_name not in patients:
                 continue
-        print(f"Processing patient {patient_name}")
+        #print(f"Processing patient {patient_name}")
 
         if patient_name not in os.listdir(images_dir):
             continue
 
-        patient_class = clini_df.loc[clini_df["PATIENT"] == "-".join(patient_name.split("-")[:3]), target_label].iloc[0]
+        patient_id = "-".join(patient_name.split("-")[:fname_index])
+        if not clini_df.loc[clini_df["PATIENT"] == patient_id].empty:
+            patient_class = clini_df.loc[clini_df["PATIENT"] == patient_id, target_label].iloc[0]
+        else:
+            print(f"Patient {patient_id} not found in the clini table, skipping.")
+            continue
 
         with h5py.File(os.path.join(feat_path, patient_fname), "r") as hdf_file:
             #features = torch.from_numpy(hdf_file["features"][:])

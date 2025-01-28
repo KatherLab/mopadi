@@ -14,9 +14,6 @@ import pickle
 load_dotenv()
 ws_path = os.getenv("WORKSPACE_PATH")
 
-def extract_patient_id(filename):
-    return "-".join(filename.split('-')[:3])
-
 parser = argparse.ArgumentParser(description="MIL Train")
 parser.add_argument('--feat_path', type=str, required=True, help='Path to the training/val feature files')
 parser.add_argument('--feat_path_test', type=str, required=True, help='Path to the testing feature files')
@@ -24,6 +21,7 @@ parser.add_argument('--out_dir', type=str, required=True, help='Output directory
 parser.add_argument('--clini_table', type=str, required=True, help='Path to the clinical table file')
 parser.add_argument('--conf_name', type=str, required=True, help='Configuration function name')
 parser.add_argument('--num_workers', type=int, default=8, help='Number of workers for data loading')
+parser.add_argument('--fname_index', type=int, default=3, help='How to split filename to get patient ID')
 parser.add_argument('--target_label', type=str, required=False, default=None, help='Target label if different from config')
 parser.add_argument('--target_dict', type=str, required=False, default=None, help='Target dictionary for the configuration (JSON format) if different')
 
@@ -35,6 +33,7 @@ out_dir = args.out_dir
 clini_table = args.clini_table
 conf_func_name = args.conf_name
 num_workers = args.num_workers
+fname_index = args.fname_index
 target_label = args.target_label
 target_dict = args.target_dict
 
@@ -85,19 +84,20 @@ if not test_only:
     valid_patient_ids = valid_patient_df['PATIENT'].unique()
     assert len(valid_patient_ids) != 0, "No patients with valid values found..."
 
-    train_files = np.random.RandomState(seed=42).permutation([os.path.join(feat_path, f) for f in os.listdir(feat_path)]).tolist()
-    test_files = np.random.RandomState(seed=42).permutation([os.path.join(feat_path_test, f) for f in os.listdir(feat_path_test)]).tolist()
+    # filter feature files based on valid patient IDs
+    train_files = [f for f in train_files if extract_patient_id(f.split('/')[-1], index=fname_index) in valid_patient_ids]
+    test_files = [f for f in test_files if extract_patient_id(f.split('/')[-1], index=fname_index) in valid_patient_ids]
 
     # filter feature files based on valid patient IDs
     train_files = [f for f in train_files if extract_patient_id(f.split('/')[-1]) in valid_patient_ids]
     test_files = [f for f in test_files if extract_patient_id(f.split('/')[-1]) in valid_patient_ids]
 
-    print(f"{len(train_files)=}")
-    print(f"{len(test_files)=}")
+    dataset = FeatDataset(train_files+test_files, clini_table, conf.target_label, conf.target_dict, conf.nr_feats, fname_index=fname_index)
+    trainset = FeatDataset(train_files, clini_table, conf.target_label, conf.target_dict, conf.nr_feats, fname_index=fname_index)
+    testset = FeatDataset(test_files, clini_table, conf.target_label, conf.target_dict, conf.nr_feats, fname_index=fname_index)
 
-    dataset = FeatDataset(train_files+test_files, clini_table, conf.target_label, conf.target_dict, conf.nr_feats)
-    trainset = FeatDataset(train_files, clini_table, conf.target_label, conf.target_dict, conf.nr_feats)
-    testset = FeatDataset(test_files, clini_table, conf.target_label, conf.target_dict, conf.nr_feats)
+    print(f"Train set positives: {trainset.get_nr_pos()}; negatives: {trainset.get_nr_neg()}")
+    print(f"Test set positives: {testset.get_nr_pos()}; negatives: {testset.get_nr_neg()}")
         
     model = Classifier(dim=conf.dim, num_heads=conf.num_heads, num_seeds=conf.num_seeds, num_classes=conf.num_classes)
     positive_weights = compute_class_weight('balanced', classes=[0,1], y=trainset.get_targets())
