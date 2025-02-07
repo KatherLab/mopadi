@@ -52,7 +52,6 @@ def evaluate_lpips(
     conf: TrainConfig,
     device,
     val_data: Dataset,
-    latent_sampler: Sampler = None,
     use_inverted_noise: bool = False,
 ):
     """
@@ -78,19 +77,18 @@ def evaluate_lpips(
         }
         for batch in tqdm(val_loader, desc='lpips'):
             imgs = batch['img'].to(device)
+            cond = batch['feats']
 
             if use_inverted_noise:
                 # inverse the noise
                 # with condition from the encoder
                 model_kwargs = {}
-                if conf.model_type.has_autoenc():
-                    with torch.no_grad():
-                        model_kwargs = model.encode(imgs)
+
                 x_T = sampler.ddim_reverse_sample_loop(
                     model=model,
                     x=imgs,
                     clip_denoised=True,
-                    model_kwargs=model_kwargs)
+                    model_kwargs={'cond': cond})
                 x_T = x_T['sample']
             else:
                 x_T = torch.randn((len(imgs), 3, conf.img_size, conf.img_size),
@@ -104,22 +102,14 @@ def evaluate_lpips(
                     model=model,
                     x_T=x_T,
                     sampler=sampler,
-                    latent_sampler=latent_sampler,
                 )
             else:
                 pred_imgs = render_condition(conf=conf,
                                              model=model,
                                              x_T=x_T,
-                                             x_start=imgs,
-                                             cond=None,
+                                             cond=cond,
                                              sampler=sampler)
-            # # returns {'cond', 'cond2'}
-            # conds = model.encode(imgs)
-            # pred_imgs = sampler.sample(model=model,
-            #                            noise=x_T,
-            #                            model_kwargs=conds)
 
-            # (n, 1, 1, 1) => (n, )
             scores['lpips'].append(lpips_fn.forward(imgs, pred_imgs).view(-1))
 
             # need to normalize into [0, 1]
@@ -177,11 +167,9 @@ def evaluate_fid(
     device,
     train_data: Dataset,
     val_data: Dataset,
-    latent_sampler: Sampler = None,
     conds_mean=None,
     conds_std=None,
     remove_cache: bool = True,
-    clip_latent_noise: bool = False,
 ):
     assert conf.fid_cache is not None
     if get_rank() == 0:
@@ -234,9 +222,7 @@ def evaluate_fid(
                     model=model,
                     x_T=x_T,
                     sampler=sampler,
-                    latent_sampler=latent_sampler,
-                    conds_mean=conds_mean,
-                    conds_std=conds_std).cpu()
+                    ).cpu()
 
                 batch_images = (batch_images + 1) / 2
                 # keep the generated images
@@ -246,72 +232,40 @@ def evaluate_fid(
                         batch_images[j],
                         os.path.join(conf.generate_dir, f'{img_name}.png'))
         elif conf.model_type == ModelType.autoencoder:
-            if conf.train_mode.is_latent_diffusion():
-                # evaluate autoencoder + latent diffusion (doesn't give the images)
-                model: BeatGANsAutoencModel
-                eval_num_images = chunk_size(conf.eval_num_images, rank,
-                                             world_size)
-                desc = "generating images"
-                for i in trange(0, eval_num_images, batch_size, desc=desc):
-                    batch_size = min(batch_size, eval_num_images - i)
-                    x_T = torch.randn(
-                        (batch_size, 3, conf.img_size, conf.img_size),
-                        device=device)
-                    batch_images = render_uncondition(
-                        conf=conf,
-                        model=model,
-                        x_T=x_T,
-                        sampler=sampler,
-                        latent_sampler=latent_sampler,
-                        conds_mean=conds_mean,
-                        conds_std=conds_std,
-                        clip_latent_noise=clip_latent_noise,
-                    ).cpu()
-                    batch_images = (batch_images + 1) / 2
-                    # keep the generated images
-                    for j in range(len(batch_images)):
-                        img_name = filename(i + j)
-                        torchvision.utils.save_image(
-                            batch_images[j],
-                            os.path.join(conf.generate_dir, f'{img_name}.png'))
-            else:
-                # evaulate autoencoder (given the images)
-                # to make the FID fair, autoencoder must not see the validation dataset
-                # also shuffle to make it closer to unconditional generation
-                train_loader = make_subset_loader(conf,
-                                                  dataset=train_data,
-                                                  batch_size=batch_size,
-                                                  shuffle=True,
-                                                  parallel=True)
+            # evaulate autoencoder (given the images)
+            # to make the FID fair, autoencoder must not see the validation dataset
+            # also shuffle to make it closer to unconditional generation
+            train_loader = make_subset_loader(conf,
+                                                dataset=train_data,
+                                                batch_size=batch_size,
+                                                shuffle=True,
+                                                parallel=True)
 
-                i = 0
-                for batch in tqdm(train_loader, desc='generating images'):
-                    imgs = batch['img'].to(device)
-                    x_T = torch.randn(
-                        (len(imgs), 3, conf.img_size, conf.img_size),
-                        device=device)
-                    batch_images = render_condition(
-                        conf=conf,
-                        model=model,
-                        x_T=x_T,
-                        x_start=imgs,
-                        cond=None,
-                        sampler=sampler).cpu()
-                    # model: BeatGANsAutoencModel
-                    # # returns {'cond', 'cond2'}
-                    # conds = model.encode(imgs)
-                    # batch_images = sampler.sample(model=model,
-                    #                               noise=x_T,
-                    #                               model_kwargs=conds).cpu()
-                    # denormalize the images
-                    batch_images = (batch_images + 1) / 2
-                    # keep the generated images
-                    for j in range(len(batch_images)):
-                        img_name = filename(i + j)
-                        torchvision.utils.save_image(
-                            batch_images[j],
-                            os.path.join(conf.generate_dir, f'{img_name}.png'))
-                    i += len(imgs)
+            i = 0
+            for batch in tqdm(train_loader, desc='generating images'):
+                imgs = batch['img'].to(device)
+                cond = batch['feat']
+
+                x_T = torch.randn(
+                    (len(imgs), 3, conf.img_size, conf.img_size),
+                    device=device)
+                batch_images = render_condition(
+                    conf=conf,
+                    model=model,
+                    x_T=x_T,
+                    #x_start=imgs,
+                    cond=cond,
+                    sampler=sampler).cpu()
+
+                # denormalize the images
+                batch_images = (batch_images + 1) / 2
+                # keep the generated images
+                for j in range(len(batch_images)):
+                    img_name = filename(i + j)
+                    torchvision.utils.save_image(
+                        batch_images[j],
+                        os.path.join(conf.generate_dir, f'{img_name}.png'))
+                i += len(imgs)
         else:
             raise NotImplementedError()
     model.train()

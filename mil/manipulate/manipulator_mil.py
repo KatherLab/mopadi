@@ -9,10 +9,10 @@ import cv2
 
 
 class ImageManipulator:
-    def __init__(self, autoenc_config, autoenc_path, mil_path, dataset, conf_cls, device="cuda:0"):    #def __init__(self, autoenc_config, autoenc_path, mil_path, latent_infer_path, dataset, conf_cls, device="cuda:0"):
+    def __init__(self, autoenc_config, autoenc_path, mil_path, dataset, conf_cls, device="cuda:0"):
         self.device = device
         self.model = self._load_model(autoenc_config, autoenc_path)
-        self.classifier = self._load_cls_model(conf_cls, mil_path)#, latent_infer_path)
+        self.classifier = self._load_cls_model(conf_cls, mil_path)
         self.data = dataset
         print("Both models loaded successfully.")
 
@@ -27,7 +27,6 @@ class ImageManipulator:
     def _load_cls_model(self, 
                        conf_cls,
                        mil_path,
-                       #latent_infer_path
                     ):
         
         cls_model = Classifier(conf_cls.dim, conf_cls.num_heads, conf_cls.num_seeds, conf_cls.num_classes)
@@ -35,7 +34,6 @@ class ImageManipulator:
         cls_model.load_state_dict(weights)
         cls_model = cls_model.to(self.device)
 
-        #self.latent_state = torch.load(latent_infer_path)
         cls_model.eval()
         return cls_model
 

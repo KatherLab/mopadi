@@ -11,9 +11,6 @@ class TrainMode(Enum):
     manipulate = 'manipulate'
     # default training mode!
     diffusion = 'diffusion'
-    # default latent training mode!
-    # fitting a DDPM to a given latent
-    latent_diffusion = 'latentdiffusion'
 
     def is_manipulate(self):
         return self in [
@@ -23,7 +20,6 @@ class TrainMode(Enum):
     def is_diffusion(self):
         return self in [
             TrainMode.diffusion,
-            TrainMode.latent_diffusion,
         ]
 
     def is_autoenc(self):
@@ -32,22 +28,13 @@ class TrainMode(Enum):
             TrainMode.diffusion,
         ]
 
-    def is_latent_diffusion(self):
-        return self in [
-            TrainMode.latent_diffusion,
-        ]
-
-    def use_latent_net(self):
-        return self.is_latent_diffusion()
-
     def require_dataset_infer(self):
         """
-        whether training in this mode requires the latent variables to be available?
+        whether training in this mode requires the pre-extracted features to be available?
         """
-        # this will precalculate all the latents beforehand
-        # and the dataset will be all the predicted latents
+        # this will precalculate all the features beforehand
+        # and the dataset will be all the predicted features
         return self in [
-            TrainMode.latent_diffusion,
             TrainMode.manipulate,
         ]
 

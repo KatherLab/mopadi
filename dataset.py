@@ -14,6 +14,7 @@ import numpy as np
 import os
 from dist_utils import *
 from dotenv import load_dotenv
+import pickle
 
 load_dotenv()
 ws_path = os.getenv('WORKSPACE_PATH')
@@ -179,80 +180,6 @@ class TCGADataset(ImagesBaseDataset):
 
         image_details = {'image':image, 'filename': fname, 'path': img_path}#, 'label': label}
         return image_details
-    
-
-class TcgaBRCA512lmdbwoMetadata(Dataset):
-    def __init__(self,
-                 path=None,
-                 split=None,
-                 as_tensor: bool = True,
-                 do_augment: bool = True,
-                 do_normalize: bool = True,
-                 **kwargs):
-        self.data = BaseLMDB(path, zfill=5)
-        self.length = len(self.data)
-
-        if split is None:
-            self.offset = 0
-        elif split == 'train':
-            self.length = 85204
-            self.offset = 0
-        elif split == 'test':
-            self.length = self.length - 85204
-            self.offset = 85204
-        else:
-            raise NotImplementedError()
-
-        transform = []
-        if do_augment:
-            transform.append(transforms.RandomHorizontalFlip())
-        if as_tensor:
-            transform.append(transforms.ToTensor())
-        if do_normalize:
-            transform.append(transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)))
-        self.transform = transforms.Compose(transform)
-
-    def __len__(self):
-        return self.length
-
-    def __getitem__(self, index):
-        assert index < self.length
-        index = index + self.offset
-        print(type(self.data[index]))
-        img = self.data[index]
-        if self.transform is not None:
-            img = self.transform(img)
-        return {'img': img, 'index': index}
-
-
-class TextureDataset(ImagesBaseDataset):
-    def __init__(self, images_dir, transform=None, do_augment=False, do_transform=True, do_normalize=True, ext="tif"):
-        super().__init__(images_dir, transform=transform, do_augment=do_augment, do_transform=do_transform, do_normalize=do_normalize)
-        self.images_dir = images_dir
-
-        self.id_to_cls = TextureAttrDataset.id_to_cls
-        self.cls_to_id = TextureAttrDataset.cls_to_id
-
-        self.image_paths = glob.glob(os.path.join(images_dir, '**', f'*.{ext}'), recursive=True)
-        self.PRED_LABEL = self.id_to_cls
-
-    def __getitem__(self, idx):
-        image_path = self.image_paths[idx]
-        img = Image.open(image_path).convert('RGB')
-        
-        class_name = os.path.basename(image_path).split('-')[0]
-        
-        class_id = self.cls_to_id[class_name]
-        pred_label = torch.zeros(len(self.id_to_cls), dtype=torch.float32)
-        pred_label[class_id] = 1
-
-        if self.transform:
-            img = self.transform(img)
-
-        return {'img': img, 'labels': pred_label, 'gt': class_name, 'filename': os.path.basename(image_path)}
-
-    def __len__(self):
-        return len(self.image_paths)
 
 
 class JapanDataset(ImagesBaseDataset):
@@ -272,32 +199,6 @@ class JapanDataset(ImagesBaseDataset):
         if self.transform:
             image = self.transform(image)
         return (image, pred_label)
-
-
-class BrainDataset(ImagesBaseDataset):
-    def __init__(self, images_dir, path_to_gt_table, transform=None):
-        super().__init__(images_dir, transform=transform)
-        self.transform = transform
-        self.images_dir = images_dir
-        self.df = pd.read_csv(path_to_gt_table)
-        self.df = self.df.set_index('FILENAME')
-        self.PRED_LABEL = self.df.columns
-
-    def __getitem__(self, idx):
-        fname = self.df.index[idx]
-        if 'GBM' in fname:
-            folder = 'GBM'
-        else:
-            # folder = 'G4A'
-            folder = "IDHmut"
-
-        image = Image.open(os.path.join(self.images_dir, folder, fname))
-        pred_label = self.get_pred_label(idx)
-
-        if self.transform:
-            image = self.transform(image)
-
-        return {'img': image, 'labels': pred_label, 'filename': fname}
     
 
 class LungDataset(ImagesBaseDataset):
@@ -351,38 +252,26 @@ class LungDataset(ImagesBaseDataset):
         image_details = {'image': image, 'filename': filename, 'path': img_path}
         return image_details
 
-        """
-        image_details = []
-        for idx, row in matching_patients.iterrows():
-            fname = row['FILENAME']
-            image_path = os.path.join(self.images_dir, fname)
-            image = Image.open(image_path)
-            
-            if self.transform:
-                image = self.transform(image)
-
-            if os.path.exists(image_path):
-                label = self.get_pred_label(idx)
-                image_details.append({'image':image, 'filename': fname, 'path': image_path, 'label': label})
-        return image_details[0]
-        """
-
   
 class DatasetBase(Dataset):
-    def __init__(self, path, lmdb_class, as_tensor=True, do_augment=True, do_normalize=True, zfill=5):
+    def __init__(self, path, lmdb_class, as_tensor=True, do_augment=True, do_normalize=True, do_resize=True, zfill=5):
         self.data = lmdb_class(path, zfill)
         self.length = len(self.data)
 
-        transforms_list = []
+        transform_list = []
         if do_augment:
-            transforms_list.append(transforms.RandomHorizontalFlip())
+            transform_list.append(transforms.RandomHorizontalFlip())
+        if do_resize:
+            #transform_list.append(transforms.Resize(size=448, interpolation=transforms.InterpolationMode.BILINEAR))       # conch v1.5
+            transform_list.append(transforms.Resize(size=448, interpolation=transforms.InterpolationMode.BICUBIC, antialias=True))
         if as_tensor:
-            transforms_list.append(transforms.ToTensor())
+            transform_list.append(transforms.ToTensor())
         if do_normalize:
-            transforms_list.append(transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)))
-      
-        if transforms_list:
-            self.transform = transforms.Compose(transforms_list)
+            #transform_list.append(transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)))    # conch v1.5
+            transform_list.append(transforms.Normalize(mean=(0.48145466, 0.4578275, 0.40821073), std=(0.26862954, 0.26130258, 0.27577711))) 
+        
+        if transform_list:
+            self.transform = transforms.Compose(transform_list)
         else:
             self.transform = None
 
@@ -391,12 +280,14 @@ class DatasetBase(Dataset):
 
     def __getitem__(self, index):
         assert index < self.length
-        data_item, fname = self.data[index]
-        #data_item = self.data[index]
+        #data_item, fname = self.data[index]
+        data_item = self.data[index]
         img = data_item if isinstance(data_item, Image.Image) else data_item['img']
+        feat = data_item.get('feat', None)
+        feat = torch.from_numpy(feat)
         if self.transform:
             img = self.transform(img)
-        return {'img': img, 'index': index, 'filename': fname}
+        return {'img': img, 'feat': feat, 'index': index}
 
 
 class BaseLMDB(Dataset):
@@ -429,78 +320,16 @@ class BaseLMDB(Dataset):
 
             img_bytes = txn.get(key)
 
+            if img_bytes is None:
+                raise KeyError(f"Image with key {key} not found in LMDB.")
+
+            feat_key = f"feat_{str(index).zfill(self.zfill)}".encode('utf-8')
+            feat_bytes = txn.get(feat_key)
+
         buffer = BytesIO(img_bytes)
         img = Image.open(buffer).convert('RGB')
-        return img, filename
-
-
-class BaseLMDBwithMetadata(BaseLMDB):
-    def __init__(self, path, zfill: int = 5, patient_id = "", coords=""):
-        self.patient_id = patient_id
-        self.coords = coords
-        super().__init__(path, zfill)
-        self.patient_coord_to_index = {}
-        self.patient_to_coords = defaultdict(list)
-
-        for i in range(self.length):
-            data_item = self.__getitem__(i)
-            patient_id = data_item['patient_id']
-            coords = data_item['coords']
-
-            key = (patient_id, coords)
-            self.patient_coord_to_index[key] = i
-            self.patient_to_coords[patient_id].append(coords)
-
-    def __getitem__(self, index):
-        key_img = f'{str(index).zfill(self.zfill)}'.encode('utf-8')
-        key_meta = f'meta_{str(index).zfill(self.zfill)}'.encode('utf-8')
-        key_coord = f'coord_{str(index).zfill(self.zfill)}'.encode('utf-8')
-        
-        with self.env.begin(write=False) as txn:
-            img_bytes = txn.get(key_img)
-            patient_id = txn.get(key_meta).decode('utf-8')
-            coords = txn.get(key_coord).decode('utf-8')
-
-        buffer = BytesIO(img_bytes)
-        img = Image.open(buffer)
-        return {'img': img, 'patient_id': patient_id, "coords": coords}
-
-    def get_coords_for_patient(self, patient_id):
-        return self.patient_to_coords.get(patient_id, [])
-
-    def get_indices_by_patient_and_coords(self, patient_id, coords):
-        """Retrieve indices for a given patient_id and coords"""
-        key = (patient_id, coords)
-        return self.patient_coord_to_index.get(key, None)
-
-    def get_patient_id_for_index(self, index):
-        """Retrieve the patient ID for a given global index"""
-        meta_key = f"meta_{str(index).zfill(5)}".encode("utf-8")
-        with self.env.begin(write=False) as txn:
-            patient_id = txn.get(meta_key)
-            if patient_id:
-                return patient_id.decode("utf-8")
-        return None
-
-    def get_all_patient_ids(self):
-        patient_ids = set()
-        for i in range(self.length):
-            patient_id = self.get_patient_id_for_index(i)
-            if patient_id:
-                patient_ids.add(patient_id)
-        return list(patient_ids)
-    
-
-class TextureLMDB(DatasetBase):
-    def __init__(self,
-                 path=os.path.expanduser('datasets/texture/Texture100k.lmdb'),
-                 as_tensor: bool = True,
-                 do_augment: bool = True,
-                 do_normalize: bool = True,
-                 zfill: int = 5,
-                ):
-        
-        super().__init__(path, lmdb_class=BaseLMDB, as_tensor=as_tensor, do_augment=do_augment, do_normalize=do_normalize, zfill=zfill)
+        feat = pickle.loads(feat_bytes) if feat_bytes is not None else None
+        return {'img': img, 'filename': filename, 'feat': feat}
 
 
 class TcgaCRCwoMetadata(DatasetBase):
@@ -509,48 +338,55 @@ class TcgaCRCwoMetadata(DatasetBase):
                  as_tensor: bool = True,
                  do_augment: bool = True,
                  do_normalize: bool = True,
+                 do_resize: bool = True,
                  zfill: int = 5,
                  ):
 
-        super().__init__(path, lmdb_class=BaseLMDB, as_tensor=as_tensor, do_augment=do_augment, do_normalize=do_normalize, zfill=zfill)
+        super().__init__(path, lmdb_class=BaseLMDB, as_tensor=as_tensor, do_augment=do_augment, do_normalize=do_normalize, do_resize=do_resize, zfill=zfill)
 
 
-class TcgaCRCwMetadata(DatasetBase):
+class TcgaBRCA512lmdbwoMetadata(Dataset):
     def __init__(self,
                  path=None,
+                 split=None,
                  as_tensor: bool = True,
                  do_augment: bool = True,
                  do_normalize: bool = True,
-                 zfill: int = 5):
+                 **kwargs):
+        self.data = BaseLMDB(path, zfill=5)
+        self.length = len(self.data)
 
-        super().__init__(path, lmdb_class=BaseLMDBwithMetadata, as_tensor=as_tensor, do_augment=do_augment, do_normalize=do_normalize, zfill=zfill)
+        if split is None:
+            self.offset = 0
+        elif split == 'train':
+            self.length = 85204
+            self.offset = 0
+        elif split == 'test':
+            self.length = self.length - 85204
+            self.offset = 85204
+        else:
+            raise NotImplementedError()
+
+        transform = []
+        if do_augment:
+            transform.append(transforms.RandomHorizontalFlip())
+        if as_tensor:
+            transform.append(transforms.ToTensor())
+        if do_normalize:
+            transform.append(transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)))
+        self.transform = transforms.Compose(transform)
+
+    def __len__(self):
+        return self.length
 
     def __getitem__(self, index):
         assert index < self.length
-        data_item = self.data[index]
-        img = data_item['img']
-        if self.transform:
+        index = index + self.offset
+        print(type(self.data[index]))
+        img = self.data[index]
+        if self.transform is not None:
             img = self.transform(img)
-        return {'img': img, 'index': index, 'patient_id': data_item['patient_id'], "coords": data_item["coords"]}
-    
-    def get_by_patient_coords(self, patient_id, coords):
-        """Retrieve data item by patient ID and coordinates."""
-        if (patient_id, coords) in self.data.patient_coord_to_index:
-            index = self.data.patient_coord_to_index[(patient_id, coords)]
-            return self.__getitem__(index)
-        else:
-            raise ValueError(f"No data found for patient_id={patient_id} and coords={coords}")
-
-
-class BrainLmdb(DatasetBase):
-    def __init__(self,
-                 path=os.path.expanduser('datasets/brain/brain-lmdb'),
-                 as_tensor: bool = True,
-                 do_augment: bool = True,
-                 do_normalize: bool = True,
-                 zfill=5):
-
-        super().__init__(path, lmdb_class=BaseLMDB, as_tensor=as_tensor, do_augment=do_augment, do_normalize=do_normalize, zfill=zfill)
+        return {'img': img, 'index': index}
 
 
 class PanCancerLmdb(DatasetBase):

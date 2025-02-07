@@ -4,7 +4,6 @@ import torch
 from torch import Tensor
 from torch.nn.functional import silu
 
-from .latentnet import *
 from .unet import *
 from configs.choices import *
 
@@ -12,20 +11,19 @@ from configs.choices import *
 @dataclass
 class BeatGANsAutoencConfig(BeatGANsUNetConfig):
     # number of style channels
-    enc_out_channels: int = 512
+    enc_out_channels: int = 512   # conch v1.5 = 768
     enc_attn_resolutions: Tuple[int] = None
     enc_pool: str = 'depthconv'
     enc_num_res_block: int = 2
     enc_channel_mult: Tuple[int] = None
     enc_grad_checkpoint: bool = False
-    latent_net_conf: MLPSkipNetConfig = None
 
     def make_model(self):
         return BeatGANsAutoencModel(self)
 
 
 class BeatGANsAutoencModel(BeatGANsUNetModel):
-    def __init__(self, conf: BeatGANsAutoencConfig):
+    def __init__(self, conf: BeatGANsAutoencConfig, feature_extractor=None):
         super().__init__(conf)
         self.conf = conf
 
@@ -35,43 +33,7 @@ class BeatGANsAutoencModel(BeatGANsUNetModel):
             time_out_channels=conf.embed_channels,
         )
 
-        self.encoder = BeatGANsEncoderConfig(
-            image_size=conf.image_size,
-            in_channels=conf.in_channels,
-            model_channels=conf.model_channels,
-            out_hid_channels=conf.enc_out_channels,
-            out_channels=conf.enc_out_channels,
-            num_res_blocks=conf.enc_num_res_block,
-            attention_resolutions=(conf.enc_attn_resolutions
-                                   or conf.attention_resolutions),
-            dropout=conf.dropout,
-            channel_mult=conf.enc_channel_mult or conf.channel_mult,
-            use_time_condition=False,
-            conv_resample=conf.conv_resample,
-            dims=conf.dims,
-            use_checkpoint=conf.use_checkpoint or conf.enc_grad_checkpoint,
-            num_heads=conf.num_heads,
-            num_head_channels=conf.num_head_channels,
-            resblock_updown=conf.resblock_updown,
-            use_new_attention_order=conf.use_new_attention_order,
-            pool=conf.enc_pool,
-        ).make_model()
-
-        if conf.latent_net_conf is not None:
-            self.latent_net = conf.latent_net_conf.make_model()
-
-    def reparameterize(self, mu: Tensor, logvar: Tensor) -> Tensor:
-        """
-        Reparameterization trick to sample from N(mu, var) from
-        N(0,1).
-        :param mu: (Tensor) Mean of the latent Gaussian [B x D]
-        :param logvar: (Tensor) Standard deviation of the latent Gaussian [B x D]
-        :return: (Tensor) [B x D]
-        """
-        assert self.conf.is_stochastic
-        std = torch.exp(0.5 * logvar)
-        eps = torch.randn_like(std)
-        return eps * std + mu
+        self.feature_extractor = feature_extractor
 
     def sample_z(self, n: int, device):
         assert self.conf.is_stochastic
@@ -82,84 +44,37 @@ class BeatGANsAutoencModel(BeatGANsUNetModel):
         assert self.conf.noise_net_conf is not None
         return self.noise_net.forward(noise)
 
-    def encode(self, x):
-        cond = self.encoder.forward(x)
-        # return {'cond': cond}
-        return cond
-
-    @property
-    def stylespace_sizes(self):
-        modules = list(self.input_blocks.modules()) + list(
-            self.middle_block.modules()) + list(self.output_blocks.modules())
-        sizes = []
-        for module in modules:
-            if isinstance(module, ResBlock):
-                linear = module.cond_emb_layers[-1]
-                sizes.append(linear.weight.shape[0])
-        return sizes
-
-    def encode_stylespace(self, x, return_vector: bool = True):
-        """
-        encode to style space
-        """
-        modules = list(self.input_blocks.modules()) + list(
-            self.middle_block.modules()) + list(self.output_blocks.modules())
-        # (n, c)
-        cond = self.encoder.forward(x)
-        S = []
-        for module in modules:
-            if isinstance(module, ResBlock):
-                # (n, c')
-                s = module.cond_emb_layers.forward(cond)
-                S.append(s)
-
-        if return_vector:
-            # (n, sum_c)
-            return torch.cat(S, dim=1)
-        else:
-            return S
-
     def forward(self,
                 x,
                 t,
-                y=None,
                 x_start=None,
                 cond=None,
                 style=None,
                 noise=None,
-                t_cond=None,
                 **kwargs):
         """
         Apply the model to an input batch.
 
         Args:
             x_start: the original image to encode
-            cond: output of the encoder
+            cond: extracted features with a pretrained foundation model; if None, features will be extracted on the fly.
             noise: random noise (to predict the cond)
         """
-
-        if t_cond is None:
-            t_cond = t
 
         if noise is not None:
             # if the noise is given, we predict the cond from noise
             cond = self.noise_to_cond(noise)
 
         if cond is None:
-            if x is not None:
-                assert len(x) == len(x_start), f'{len(x)} != {len(x_start)}'
+            if self.feature_extractor is not None:
+                print("Extracting feats on the fly, this should not happen!")
+                cond = self.feature_extractor.extract_feats(x_start)
+            else:
+                raise ValueError("No extracted features provided and no feature extractor available.")
 
-            # tmp = self.encode(x_start)
-            # cond = tmp['cond']
-            cond = self.encode(x_start)
 
-        if t is not None:
-            _t_emb = timestep_embedding(t, self.conf.model_channels)
-            _t_cond_emb = timestep_embedding(t_cond, self.conf.model_channels)
-        else:
-            # this happens when training only autoenc
-            _t_emb = None
-            _t_cond_emb = None
+        _t_emb = timestep_embedding(t, self.conf.model_channels)
+        _t_cond_emb = _t_emb
 
         if self.conf.resnet_two_cond:
             res = self.time_embed.forward(
@@ -181,15 +96,6 @@ class BeatGANsAutoencModel(BeatGANsUNetModel):
 
         # override the style if given
         style = style or res.style
-
-        assert (y is not None) == (
-            self.conf.num_classes is not None
-        ), "must specify y if and only if the model is class-conditional"
-
-        if self.conf.num_classes is not None:
-            raise NotImplementedError()
-            # assert y.shape == (x.shape[0], )
-            # emb = emb + self.label_emb(y)
 
         # where in the model to supply time conditions
         enc_time_emb = emb
@@ -214,7 +120,6 @@ class BeatGANsAutoencModel(BeatGANsUNetModel):
                                              emb=enc_time_emb,
                                              cond=enc_cond_emb)
 
-                    # print(i, j, h.shape)
                     hs[i].append(h)
                     k += 1
             assert k == len(self.input_blocks)

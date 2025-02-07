@@ -263,7 +263,7 @@ def apply_conditions(
     cond=None,
     layers: nn.Sequential = None,
     scale_bias: float = 1,
-    in_channels: int = 512,
+    in_channels: int = 512,   # conch v1.5 = 768
     up_down_layer: nn.Module = None,
 ):
     """

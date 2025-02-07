@@ -48,8 +48,6 @@ class BeatGANsUNetConfig(BaseConfig):
     conv_resample: bool = True
     # always 2 = 2d conv
     dims: int = 2
-    # don't use this, legacy from BeatGANs
-    num_classes: int = None
     use_checkpoint: bool = False
     # number of attention heads
     num_heads: int = 1
@@ -90,10 +88,6 @@ class BeatGANsUNetModel(nn.Module):
             nn.SiLU(),
             linear(conf.embed_channels, conf.embed_channels),
         )
-
-        if conf.num_classes is not None:
-            self.label_emb = nn.Embedding(conf.num_classes,
-                                          conf.embed_channels)
 
         ch = input_ch = int(conf.channel_mult[0] * conf.model_channels)
         self.input_blocks = nn.ModuleList([
@@ -292,27 +286,18 @@ class BeatGANsUNetModel(nn.Module):
                 conv_nd(conf.dims, input_ch, conf.out_channels, 3, padding=1),
             )
 
-    def forward(self, x, t, y=None, **kwargs):
+    def forward(self, x, t, **kwargs):
         """
         Apply the model to an input batch.
 
         :param x: an [N x C x ...] Tensor of inputs.
         :param timesteps: a 1-D batch of timesteps.
-        :param y: an [N] Tensor of labels, if class-conditional.
         :return: an [N x C x ...] Tensor of outputs.
         """
-        assert (y is not None) == (
-            self.conf.num_classes is not None
-        ), "must specify y if and only if the model is class-conditional"
 
         # hs = []
         hs = [[] for _ in range(len(self.conf.channel_mult))]
         emb = self.time_embed(timestep_embedding(t, self.time_emb_channels))
-
-        if self.conf.num_classes is not None:
-            raise NotImplementedError()
-            # assert y.shape == (x.shape[0], )
-            # emb = emb + self.label_emb(y)
 
         # new code supports input_num_blocks != output_num_blocks
         h = x.type(self.dtype)
