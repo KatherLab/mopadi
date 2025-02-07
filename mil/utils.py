@@ -28,8 +28,10 @@ ws_path = os.getenv("WORKSPACE_PATH")
 font_dir = f'{ws_path}/wanshi-utils/HelveticaNeue.ttf'
 my_font = font_manager.FontProperties(fname=font_dir)
 
-def extract_patient_id(filename):
-    return "-".join(filename.split('-')[:3])
+def extract_patient_id(filename, index=3):
+    filename = filename.rsplit('.', 1)[0]
+    parts = filename.split('-')
+    return "-".join(parts[:index])
 
 class Classifier(nn.Module):
     def __init__(self, dim, num_heads, num_seeds, num_classes, ln=False):
@@ -54,7 +56,7 @@ class Classifier(nn.Module):
         return self.classifier(x)
     
 class FeatDataset(Dataset):
-    def __init__(self, feat_list, annot_file, target_label, target_dict, nr_feats=None, indices=None, shuffle=False):
+    def __init__(self, feat_list, annot_file, target_label, target_dict, nr_feats=None, indices=None, shuffle=False, fname_index=3):
         self.feat_list = feat_list
         self.indices = indices if indices is not None else list(range(len(self.feat_list)))
         try:
@@ -71,6 +73,7 @@ class FeatDataset(Dataset):
         self.target_dict = target_dict
         self.nr_feats = nr_feats
         self.shuffle = shuffle
+        self.fname_index = fname_index
 
     def __len__(self):
         return len(self.indices)
@@ -78,7 +81,7 @@ class FeatDataset(Dataset):
     def get_targets(self, indices=None):
         indices = indices if indices is not None else self.indices
         return [
-            self.target_dict[self.df[self.df.PATIENT == ("-").join(self.feat_list[i].split("/")[-1].split(".h5")[0].split("-")[:3])][self.target_label].values[0]]
+            self.target_dict[self.df[self.df.PATIENT == ("-").join(self.feat_list[i].split("/")[-1].split(".h5")[0].split("-")[:self.fname_index])][self.target_label].values[0]]
                 for i in indices]
 
     def get_nr_pos(self, indices=None):
@@ -99,14 +102,15 @@ class FeatDataset(Dataset):
         return np.sum(targets == 0)
 
     def get_patient_ids(self):
-        return [self.df[self.df.PATIENT == "-".join(feat_path.split("/")[-1].split(".h5")[0].split("-")[:3])].PATIENT.values[0]
+        return [self.df[self.df.PATIENT == "-".join(feat_path.split("/")[-1].split(".h5")[0].split("-")[:self.fname_index])].PATIENT.values[0]
                     for feat_path in self.feat_list]
                     
     def __getitem__(self, idx):
         actual_idx = self.indices[idx]
-
+        if idx >= len(self.indices):
+            raise IndexError(f"Index {idx} out of bounds for indices of size {len(self.indices)}")
         feat_path = self.feat_list[actual_idx]
-        pat = "-".join(feat_path.split("/")[-1].split(".h5")[0].split("-")[:3])
+        pat = "-".join(feat_path.split("/")[-1].split(".h5")[0].split("-")[:self.fname_index])
         target = self.target_dict[self.df[self.df.PATIENT==pat][self.target_label].values[0]]
         #feats = torch.from_numpy(h5py.File(feat_path)["feats"][:])
         with h5py.File(feat_path, "r") as h5_file:
@@ -138,6 +142,15 @@ def load_lit_model(model_config, checkpoint_path):
     model.eval()
     model.cuda()
     return model
+
+def load_cls_model(conf_cls, mil_path, device="cpu"):
+    
+    cls_model = Classifier(conf_cls.dim, conf_cls.num_heads, conf_cls.num_seeds, conf_cls.num_classes)
+    weights = torch.load(mil_path)
+    cls_model.load_state_dict(weights)
+    cls_model = cls_model.to(device)
+    cls_model.eval()
+    return cls_model
 
 def normalize(feats, state, device="cuda:0"):
     conds_mean = state["conds_mean"][None, None, :].to(device)
@@ -372,7 +385,7 @@ def test(model, loader_dict, target_label, out_dir, positive_weights):
     all_predicted_probs = []
     all_targets = []
 
-    pred_dict = {"preds":[], target_label:[]}
+    pred_dict = {"pat_ids":loader_dict["test"].dataset.get_patient_ids(), "preds":[], target_label:[]}
 
     test_loss = 0
     
@@ -462,7 +475,6 @@ def test(model, loader_dict, target_label, out_dir, positive_weights):
     fig_roc.savefig(f"{out_dir}/ROC-mil-{target_label}.svg")
     #fig_prc.savefig(f"{out_dir}/PRC-mil-{target_label}.pdf",dpi=300)
     
-    # Save all predictions to see if manipulation will have an effect
     pred_dict = {"pat_ids":loader_dict["total"].dataset.get_patient_ids(),"preds":[], target_label:[]}
     all_predicted_labels = []
     # all_targets = []

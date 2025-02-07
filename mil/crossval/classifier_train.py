@@ -25,6 +25,7 @@ parser.add_argument('--clini_table', type=str, required=True, help='Path to the 
 parser.add_argument('--conf_name', type=str, required=True, help='Configuration function name')
 parser.add_argument('--nr_folds', type=int, default=5, help='Number of folds for cross-validation')
 parser.add_argument('--num_workers', type=int, default=8, help='Number of workers for data loading')
+parser.add_argument('--fname_index', type=int, default=3, help='How to split filename to get patient ID')
 parser.add_argument('--target_label', type=str, required=False, default=None, help='Target label if different from config')
 parser.add_argument('--target_dict', type=str, required=False, default=None, help='Target dictionary for the configuration (JSON format) if different')
 
@@ -37,6 +38,7 @@ clini_table = args.clini_table
 conf_func_name = args.conf_name
 nr_folds = args.nr_folds
 num_workers = args.num_workers
+fname_index = args.fname_index
 target_label = args.target_label
 target_dict = args.target_dict
 
@@ -89,13 +91,13 @@ train_files = np.random.RandomState(seed=420).permutation([os.path.join(feat_pat
 test_files = np.random.RandomState(seed=420).permutation([os.path.join(feat_path_test, f) for f in os.listdir(feat_path_test)]).tolist()
 
 # filter feature files based on valid patient IDs
-train_files = [f for f in train_files if extract_patient_id(f.split('/')[-1]) in valid_patient_ids]
-test_files = [f for f in test_files if extract_patient_id(f.split('/')[-1]) in valid_patient_ids]
+train_files = [f for f in train_files if extract_patient_id(f.split('/')[-1], index=fname_index) in valid_patient_ids]
+test_files = [f for f in test_files if extract_patient_id(f.split('/')[-1], index=fname_index) in valid_patient_ids]
 
 # group files by patient id to ensure that one patient's imgs are only in train or test
 patient_files = defaultdict(list)
 for f in train_files:
-    patient_id = extract_patient_id(f.split('/')[-1])
+    patient_id = extract_patient_id(f.split('/')[-1], index=fname_index)
     patient_files[patient_id].append(f)
 
 all_train_files = []
@@ -111,9 +113,9 @@ assert len(all_train_files) == len(groups), "Mismatch between number of training
 
 group_kf = GroupKFold(n_splits=nr_folds)
 
-train_val_dataset = FeatDataset(all_train_files, clini_table, conf.target_label, conf.target_dict)
-test_dataset = FeatDataset(test_files, clini_table, conf.target_label, conf.target_dict)
-full_dataset = FeatDataset(all_train_files+test_files, clini_table, conf.target_label, conf.target_dict)
+train_val_dataset = FeatDataset(feat_list=all_train_files, annot_file=clini_table, target_label=conf.target_label, target_dict=conf.target_dict, fname_index=fname_index)
+test_dataset = FeatDataset(feat_list=test_files, annot_file=clini_table, target_label=conf.target_label, target_dict=conf.target_dict, fname_index=fname_index)
+full_dataset = FeatDataset(feat_list=all_train_files+test_files, annot_file=clini_table, target_label=conf.target_label, target_dict=conf.target_dict, fname_index=fname_index)
 
 for fold, (train_index, val_index) in enumerate(group_kf.split(X=all_train_files, groups=groups)):
     out_fold_dir = os.path.join(out_dir, f"fold_{fold}")
@@ -130,8 +132,8 @@ for fold, (train_index, val_index) in enumerate(group_kf.split(X=all_train_files
     train_patients = [all_train_files[i] for i in train_index]
     val_patients = [all_train_files[i] for i in val_index]
 
-    train_dataset = FeatDataset(train_patients, clini_table, conf.target_label, conf.target_dict, conf.nr_feats, shuffle=True)
-    val_dataset = FeatDataset(val_patients, clini_table, conf.target_label, conf.target_dict, shuffle=False)
+    train_dataset = FeatDataset(train_patients, clini_table, conf.target_label, conf.target_dict, conf.nr_feats, shuffle=True, fname_index=fname_index)
+    val_dataset = FeatDataset(val_patients, clini_table, conf.target_label, conf.target_dict, shuffle=False, fname_index=fname_index)
 
     test_patients = list(set([extract_patient_id(f.split('/')[-1]) for f in test_files]))
 

@@ -146,7 +146,7 @@ class ImageManipulator:
                     except IndexError:
                         print(f"Features for the top tile {top_idx.item()} for patient {patient_name} not found. Patient has {len(metadata)} features.")
                         continue
-                    print(f"Filename: {fname}")
+                    #print(f"Filename: {fname}")
 
                     out_dir = os.path.join(save_path, fname.split(".")[0])
                     if not os.path.exists(out_dir):
