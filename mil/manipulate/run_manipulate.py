@@ -86,7 +86,7 @@ if __name__=="__main__":
     if not os.path.exists(save_dir):
         Path(save_dir).mkdir(parents=True, exist_ok=True)
 
-    data = TCGADataset(images_dir=images_dir, 
+    data = BrainCacheDataset(images_dir=images_dir, 
                        transform=transforms.Compose([
                                  transforms.ToTensor(),
                                  transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]))
@@ -118,7 +118,11 @@ if __name__=="__main__":
                 continue
         #print(f"Processing patient {patient_name}")
 
-        if patient_name not in os.listdir(images_dir):
+        found_folder = next((item for item in os.listdir(images_dir) if patient_name in item), None)
+        if found_folder and patient_name != found_folder:
+            print(f"Patient '{patient_name}' found as '{found_folder}'")
+        else:
+            print(f"Patient '{patient_name}' not found in the images directory, skipping...")
             continue
 
         patient_id = "-".join(patient_name.split("-")[:fname_index])

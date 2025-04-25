@@ -12,9 +12,9 @@ ws_path = os.getenv("WORKSPACE_PATH")
 
 
 target_label = "2021WHO"
-
 out_dir = f"{ws_path}/mopadi/checkpoints/brain/brain-full/{target_label}/full_model"
 csv_file = os.path.join(out_dir, 'PMA_mil_preds_test.csv')
+positive_lavel = "A4_IDH"
 
 y_trues = []
 y_scores = []
@@ -26,31 +26,16 @@ class_data = []
 unique_classes = df[target_label].unique()
 print(unique_classes)
 
-for i in unique_classes:
-    #pred_column = f"{target_label}_{i}"
-    pred_column = "preds"
-    if pred_column not in df.columns:
-        print(f"Warning: Prediction column '{pred_column}' not found for class {i}.")
-        continue
+positive_class = 1 
+pred_column = "preds"
 
-    y_true = df[target_label] == i
-    if i == 0:
-        y_pred = 1 - pd.to_numeric(df[pred_column], errors='coerce')
-    else:
-        y_pred = pd.to_numeric(df[pred_column], errors='coerce')
-    
-    if len(y_true) != len(y_pred):
-        print(f"Error: Mismatch in lengths for class {i}. True labels: {len(y_true)}, Predictions: {len(y_pred)}")
-        continue
-    class_data.append((str(i), y_true.values, y_pred.values))
+if pred_column not in df.columns:
+    raise ValueError(f"Prediction column '{pred_column}' not found in the DataFrame.")
 
-class_labels, y_trues, y_preds = zip(*class_data) if class_data else ([], [], [])
+y_trues = [df[target_label] == positive_class]
+y_preds = [pd.to_numeric(df[pred_column], errors='coerce').values]
 
-for i, (label, true, pred) in enumerate(zip(class_labels, y_trues, y_preds)):
-    print(f"Class {label}: {sum(true)} positive samples, {len(pred)} total predictions")
-
-y_trues = [np.array(y_true) for y_true in y_trues]
-y_preds = [np.array(y_pred) for y_pred in y_preds]
+class_labels = [positive_lavel]
 
 roc_curve_figure_aspect_ratio = 1.08
 fig, ax = plt.subplots(
@@ -64,7 +49,7 @@ plot_multiple_decorated_pr_curves(
     y_trues=y_trues,
     y_scores=y_preds,
     class_labels=class_labels,
-    #title=f"{target_label}",
+    title=f"{target_label}",
     n_bootstrap_samples=1000
 )
 
@@ -85,7 +70,7 @@ plot_multiple_decorated_roc_curves(
     y_trues=y_trues,
     y_scores=y_preds,
     class_labels=class_labels,
-    #title=f"{target_label}",
+    title=f"{target_label}",
     n_bootstrap_samples=1000
 )
 

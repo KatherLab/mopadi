@@ -14,6 +14,7 @@ import numpy as np
 import os
 from dist_utils import *
 from dotenv import load_dotenv
+import pickle
 
 load_dotenv()
 ws_path = os.getenv('WORKSPACE_PATH')
@@ -158,7 +159,6 @@ class TCGADataset(ImagesBaseDataset):
 
     def get_images_by_patient_and_fname(self, patient_name, coords):
         all_patients = [f for f in os.listdir(self.images_dir) if os.path.isdir(os.path.join(self.images_dir, f))]
-        print(f"Looking for {patient_name}")
         for patient in all_patients:
             if patient_name in patient:
                 patient_path = os.path.join(self.images_dir, patient)
@@ -170,6 +170,74 @@ class TCGADataset(ImagesBaseDataset):
                 fname = tile
                 
         if img_path is None:
+            return None
+
+        image = Image.open(img_path)
+            
+        if self.transform:
+            image = self.transform(image)
+
+        image_details = {'image':image, 'filename': fname, 'path': img_path}#, 'label': label}
+        return image_details
+
+class BrainCacheDataset(ImagesBaseDataset):
+    def __init__(self, images_dir, test_man_amp=None, transform=None):
+        self.transform = transform
+        self.images_dir = images_dir
+        if test_man_amp is not None:
+            self.test_man_amp = test_man_amp
+            self.patients = [os.path.join(images_dir, name) for name in sorted(os.listdir(images_dir)) if os.path.isdir(os.path.join(images_dir, name))]
+            self.patient_subfolders = {
+                patient: [
+                    os.path.join(patient, subfolder) for subfolder in sorted(os.listdir(patient))
+                    if os.path.isdir(os.path.join(patient, subfolder))
+                ]
+                for patient in self.patients
+            }
+
+    def __len__(self):
+        return len(self.patients)
+
+    def __getitem__(self, idx):
+        patient_folder = self.patients[idx]
+        subfolders = self.patient_subfolders[patient_folder]
+        data = {}
+        for subfolder in subfolders:
+            data[subfolder] = []
+            fnames = sorted([os.path.join(subfolder, f) for f in os.listdir(subfolder) if os.path.join(subfolder, f).endswith('png')])
+            for fname in fnames:
+                if self.test_man_amp in fname:
+                    image = Image.open(fname).convert('RGB')
+                    if self.transform:
+                        image = self.transform(image)
+                    data[subfolder].append(image)
+            if len(data[subfolder])==0:
+                print(f"Did not find image with {self.test_man_amp} for patient {subfolder}")
+
+        return data
+
+    def get_images_by_patient_and_fname(self, patient_name, coords):
+        all_patients = [f for f in os.listdir(self.images_dir) if os.path.isdir(os.path.join(self.images_dir, f))]
+        patient_path = next((os.path.join(self.images_dir, patient) for patient in all_patients if patient_name in patient), None)
+        print(patient_path)
+
+        if patient_path is None:
+            print(f"No images folder found for patient name: {patient_name}")
+            return None
+
+        tiles = os.listdir(os.path.join(patient_path, 'tiles'))
+        if not os.path.exists(os.path.join(patient_path, 'tiles')) or len(tiles) == 0:
+            print(f"No 'tiles' folder found for patient: {patient_path} or it is empty")
+            return None
+
+        img_path = None
+        for tile in tiles:
+            if coords in tile.lower():
+                img_path = os.path.join(patient_path, 'tiles', tile)
+                fname = tile
+                
+        if img_path is None:
+            print(f"No tile found with coordinates '{coords}' for patient: {patient_path}")
             return None
 
         image = Image.open(img_path)
@@ -429,6 +497,8 @@ class BaseLMDB(Dataset):
 
             img_bytes = txn.get(key)
 
+            if img_bytes is None:
+                raise KeyError(f"Image with key {key} not found in LMDB.")
         buffer = BytesIO(img_bytes)
         img = Image.open(buffer).convert('RGB')
         return img, filename

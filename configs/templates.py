@@ -146,9 +146,10 @@ def brain_autoenc():
     conf.base_dir = f'{ws_path}/mopadi/checkpoints/brain'
     conf.warmup = 0
     conf.total_samples = 200_000_000
+    conf.sample_size = 16
     conf.img_size = 224
-    conf.batch_size = 64
-    conf.batch_size_eval = 64
+    conf.batch_size = 32
+    conf.batch_size_eval = 32
     conf.net_ch = 128
     conf.net_ch_mult = (1, 1, 2, 2, 4, 4)
     conf.net_enc_channel_mult = (1, 1, 2, 2, 4, 4, 4)

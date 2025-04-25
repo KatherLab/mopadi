@@ -47,6 +47,15 @@ def liver_types_mil():
     conf.target_dict = {"hcc": 0, "cca": 1}
     return conf
 
+def brain_mil():
+    conf = MILconfig()    
+    conf.nr_feats = 512
+    conf.target_label = "2021WHO"
+    conf.num_epochs = 100
+    conf.sab_ln = False
+    conf.target_dict = {"GBM_WT": 0, "A4_IDH": 1}
+    return conf
+
 
 def texture100k_linear_cls():
     conf = texture100k_autoenc()

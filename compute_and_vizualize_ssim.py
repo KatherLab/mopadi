@@ -146,10 +146,14 @@ if __name__ == "__main__":
     #target_dict = {"MSIH": "MSIH", "nonMSIH": "nonMSIH"}
 
     # BRCA cancer types
-    results_dir = f"{ws_path}/mopadi/checkpoints/brca/BRCA_Pathology/manipulate_results-newfeats2"
-    target_dict = {"IDC": "IDC", "ILC": "ILC"}
+    #results_dir = f"{ws_path}/mopadi/checkpoints/brca/BRCA_Pathology/manipulate_results-newfeats2"
+    #target_dict = {"IDC": "IDC", "ILC": "ILC"}
 
-    man_amps = [0.010, 0.020, 0.030, 0.040, 0.050]
+    # BRAIN
+    results_dir = f"{ws_path}/mopadi/checkpoints/brain/brain-full/2021WHO/manipulate_results"
+    target_dict = {"GBM_IDH": "GBM_IDH", "A4_IDH": "A4_IDH"}
+
+    man_amps = [0.020, 0.040, 0.060, 0.080]
     patients = [f for f in os.listdir(results_dir) if not f.startswith(".")]
 
     for patient in tqdm(patients):

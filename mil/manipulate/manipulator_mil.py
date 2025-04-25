@@ -178,9 +178,10 @@ class ImageManipulator:
                 # if the image has been already manipulated with the same amplitude, skip it
                 if os.path.exists(save_manip_path):
                    continue
-
+                print(f'looking {patient_name} {fname}')
                 patient_details = self.data.get_images_by_patient_and_fname(patient_name, fname)
                 if patient_details is None:
+                    print(f"Patient {patient_name} details not found, skipping...")
                     continue
                 #print(patient_details["filename"])
                 original_img = patient_details["image"][None]
