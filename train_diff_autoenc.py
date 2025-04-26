@@ -27,6 +27,7 @@ from dataset import *
 from dist_utils import *
 from metrics import *
 from renderer import *
+from utils.misc import *
 
 torch.set_float32_matmul_precision('medium')
 
@@ -71,16 +72,21 @@ class LitModel(pl.LightningModule):
         self.register_buffer(
             'x_T',
             torch.randn(conf.sample_size, 3, conf.img_size, conf.img_size))
+        
+        pretrained_path = os.path.join(conf.base_dir, 'autoenc', 'last.ckpt')
+        if conf.load_pretrained_autoenc:
+            if os.path.exists(pretrained_path):
+                print(f'Loading pretrained model from {pretrained_path}')
+                state = torch.load(pretrained_path, map_location='cpu')
+                print('step:', state['global_step'])
+                self.load_state_dict(state['state_dict'], strict=False)
+            else:
+                raise FileNotFoundError(f"Pretrained autoencoder checkpoint not found at {pretrained_path}")
 
-        if conf.pretrain is not None:
-            print(f'loading pretrain ... {conf.pretrain.name}')
-            state = torch.load(conf.pretrain.path, map_location='cpu')
-            print('step:', state['global_step'])
-            self.load_state_dict(state['state_dict'], strict=False)
-
-        if conf.latent_infer_path is not None:
-            print('loading latent stats ...')
-            state = torch.load(conf.latent_infer_path)
+        latent_infer_path = os.path.join(conf.base_dir, 'latent.pkl')
+        if os.path.exists(latent_infer_path):
+            print('Loading pre-extracted features of the encoder...')
+            state = torch.load(latent_infer_path)
             self.conds = state['conds']
             self.register_buffer('conds_mean', state['conds_mean'][None, :])
             self.register_buffer('conds_std', state['conds_std'][None, :])
@@ -294,7 +300,7 @@ class LitModel(pl.LightningModule):
             writer = nullcontext()
 
         with writer:
-            for batch in tqdm(loader, total=len(loader), desc='infer'):
+            for batch in tqdm(loader, total=len(loader), desc='Extract feats'):
                 with torch.no_grad():
                     # (n, c)
                     # print('idx:', batch['index'])
@@ -679,10 +685,9 @@ class LitModel(pl.LightningModule):
         """
         if 'infer' in self.conf.eval_programs:
             if 'infer' in self.conf.eval_programs:
-                print('infer ...')
+                print('Extracting features with a pretrained encoder...')
                 conds = self.infer_whole_dataset().float()
                 save_path = os.path.join(self.conf.base_dir, 'latent.pkl')
-                # save_path = f'checkpoints/{self.conf.name}/latent.pkl'
             else:
                 raise NotImplementedError()
 
@@ -868,24 +873,26 @@ def is_time(num_samples, every, step_size):
 
 def train(conf: TrainConfig, gpus, nodes=1, mode: str = 'train'):
     model = LitModel(conf)
-    model.setup()
 
-    print("\n=== SANITY CHECK: Checking first batch from DataLoader ===")
-    dl = model.train_dataloader()
-    batch = next(iter(dl))
-    if isinstance(batch, dict):
-        for k, v in batch.items():
-            print(f"  {k}: shape={getattr(v, 'shape', None)}, dtype={getattr(v, 'dtype', None)}")
-    elif isinstance(batch, (tuple, list)):
-        print("  tuple/list:", [getattr(b, 'shape', None) for b in batch])
-    else:
-        print("  type:", type(batch))
+    if not conf.load_pretrained_autoenc:
+        model.setup()
 
-    if 'coords' in batch:
-        coords = batch['coords'] 
-        if (coords == -1).all(dim=1).any():
-            print("[WARNING] Some or all filenames do not contain coordinates (or they were not extracted correctly)! Using dummy value [-1, -1] for tiles without coords.")
-    print("=== END SANITY CHECK ===\n")
+        print("\n=== SANITY CHECK: Checking first batch from DataLoader ===")
+        dl = model.train_dataloader()
+        batch = next(iter(dl))
+        if isinstance(batch, dict):
+            for k, v in batch.items():
+                print(f"  {k}: shape={getattr(v, 'shape', None)}, dtype={getattr(v, 'dtype', None)}")
+        elif isinstance(batch, (tuple, list)):
+            print("  tuple/list:", [getattr(b, 'shape', None) for b in batch])
+        else:
+            print("  type:", type(batch))
+
+        if 'coords' in batch:
+            coords = batch['coords'] 
+            if (coords == -1).all(dim=1).any():
+                print("[WARNING] Some or all filenames do not contain coordinates (or they were not extracted correctly)! Using dummy value [-1, -1] for tiles without coords.")
+        print("=== END SANITY CHECK ===\n")
 
     if get_rank() == 0:  # Ensure only the main worker creates the directory
         if not os.path.exists(conf.logdir):
@@ -901,11 +908,10 @@ def train(conf: TrainConfig, gpus, nodes=1, mode: str = 'train'):
     print('Checkpoint model path:', checkpoint_model_path)
     if os.path.exists(checkpoint_model_path):
         resume = True
-        print(f'resuming training, model loaded from {checkpoint_model_path}!')
     else:
-        if conf.continue_from is not None:
+        if conf.continue_from is not None and os.path.exists(conf.continue_from):
             # continue from a checkpoint
-            checkpoint_path = conf.continue_from.path
+            checkpoint_model_path = conf.continue_from
             resume = True
         else:
             resume = False
@@ -968,11 +974,9 @@ def train(conf: TrainConfig, gpus, nodes=1, mode: str = 'train'):
         # dummy loader to allow calling "test_step"
         dummy = DataLoader(TensorDataset(torch.tensor([0.] * conf.batch_size)),
                            batch_size=conf.batch_size)
-        eval_path = conf.eval_path or checkpoint_path
-        # conf.eval_num_images = 50
-        print('loading from:', eval_path)
-        state = torch.load(eval_path, map_location='cpu')
-        print('step:', state['global_step'])
+        print('Loading from:', checkpoint_model_path)
+        state = torch.load(checkpoint_model_path, map_location='cpu')
+        print('Step:', state['global_step'])
         model.load_state_dict(state['state_dict'])
         # trainer.fit(model)
         out = trainer.test(model, dataloaders=dummy)

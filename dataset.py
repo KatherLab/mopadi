@@ -556,6 +556,62 @@ class DefaultTilesDataset(TilesDataset):
         return {"img": image, "coords": tile_coords, "filename": tile_path, "index": index}
 
 
+class DefaultAttrDataset(Dataset):
+    def __init__(
+        self,
+        root_dirs,
+        attr_path,
+        id_to_cls,
+        test_patients_file_path=None,
+        split='none',
+        max_tiles_per_patient=None,
+        cohort_size_threshold=1_400_000,
+        as_tensor=True,
+        do_normalize=True,
+        do_resize=False,
+        img_size=224,
+        process_only_zips=False,
+        cache_pickle_tiles_path=None,
+        cache_cohort_sizes_path=None,
+    ):
+        self.id_to_cls = id_to_cls
+        self.cls_to_id = {v: k for k, v in enumerate(self.id_to_cls)}
+
+        self.tiles_dataset = DefaultTilesDataset(
+            root_dirs=root_dirs,
+            test_patients_file_path=test_patients_file_path,
+            split=split,
+            max_tiles_per_patient=max_tiles_per_patient,
+            cohort_size_threshold=cohort_size_threshold,
+            as_tensor=as_tensor,
+            do_normalize=do_normalize,
+            do_resize=do_resize,
+            img_size=img_size,
+            process_only_zips=process_only_zips,
+            cache_pickle_tiles_path=cache_pickle_tiles_path,
+            cache_cohort_sizes_path=cache_cohort_sizes_path,
+        )
+
+        with open(attr_path) as f:
+            f.readline()  # discard the top line
+            self.df = pd.read_csv(f, delim_whitespace=True)
+        self.df = self.df.set_index('FILENAME')
+
+    def __len__(self):
+        return len(self.tiles_dataset)
+
+    def __getitem__(self, index):
+        item = self.tiles_dataset[index]
+        fname = os.path.basename(item['filename'])
+
+        if fname not in self.df.index:
+            raise KeyError(f"File {fname} not in label table.")
+        row = self.df.loc[fname]
+        labels = torch.tensor([row.get(cls, 0) for cls in self.id_to_cls], dtype=torch.float32)
+        item['labels'] = labels
+        return item
+
+
 class AttrDatasetBase(Dataset):
     def __init__(self, path, attr_path, cls_to_id, as_tensor=True, do_augment=True, do_normalize=True, zfill=5):
         print(f"Data will be loaded from: {path}")
@@ -583,22 +639,6 @@ class AttrDatasetBase(Dataset):
 
     def __len__(self):
         return len(self.df)
-
-    def view_all_patient_ids(self):
-        """
-        Method to view all patient IDs present in the LMDB dataset.
-        """
-        patient_ids = set()
-        for index in tqdm(range(len(self.data))):
-            try:
-                _, fname = self.data[index]
-                pat_id = "-".join(fname.split("/")[-2].split("-")[:3])
-                patient_ids.add(pat_id)
-            except Exception as e:
-                print(f"Error processing index {index}: {e}")
-
-        print(f"Total unique patient IDs: {len(patient_ids)}")
-        return patient_ids
 
     def __getitem__(self, index):
         row = self.df.iloc[index]

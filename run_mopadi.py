@@ -1,6 +1,7 @@
 import argparse
 import yaml
 import torch
+import os
 
 from train_diff_autoenc import train
 from linear_clf.train_linear_cls import train_cls
@@ -9,9 +10,11 @@ from configs.templates_latent import default_latent
 from configs.templates_cls import default_linear_clf
 
 def validate_gpus(gpus):
+
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is not available, but GPUs were specified in the config.")
     n_gpus = torch.cuda.device_count()
+    print('-----------------------------------')
     print(f"{n_gpus} CUDA device(s) available:")
     for i in range(n_gpus):
         print(f"  GPU {i}: {torch.cuda.get_device_name(i)}")
@@ -22,6 +25,7 @@ def validate_gpus(gpus):
                 f"Requested GPU {gpu} is not available! "
                 f"Available device indices: 0 to {n_gpus-1}"
             )
+    print('-----------------------------------')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run mopadi with YAML config')
@@ -47,26 +51,41 @@ if __name__ == '__main__':
             raise ValueError("gpus in config must be an int or list of ints.")
         validate_gpus(gpus)
 
-    if config.get('train_type') == 'autoenc':
+    train_config = config.get('train', {})
+
+    if train_config.get('train_type') == 'autoenc':
         # train the autoenc model
         # NOTE: this requires 8 (40Gb) or 4 (80Gb) x A100
         autoenc_conf = default_autoenc(config)
         train(autoenc_conf, gpus=gpus)
-    elif config.get('train_type') == 'latent_dpm':
-        # infer the latents for training the latent DPM
+
+    elif train_config.get('train_type') == 'latent_dpm':
+        # infer the features for training the latent DPM
         # NOTE: not gpu heavy, but more gpus can be of use!
         autoenc_conf = default_autoenc(config)
-        print("Infering the latents...")
-        autoenc_conf.eval_programs = ['infer']
-        train(autoenc_conf, gpus=gpus, mode='eval')
+        latent_infer_path = os.path.join(autoenc_conf.base_dir, 'latent.pkl')
+        if not os.path.exists(latent_infer_path):
+            print(f"Infering the features with the autoencoder from {os.path.join(autoenc_conf.base_dir, 'last.ckpt')}...")
+            autoenc_conf.eval_programs = ['infer']
+            train(autoenc_conf, gpus=gpus, mode='eval')
         
-        # train the latent DPM (can be trained locally)
+        # train the latent DPM (not computationally heavy)
+        print(f"Starting the training of the latent DPM with the features from {latent_infer_path}...")
         latent_dpm_conf = default_latent(config)
         train(latent_dpm_conf, gpus=gpus)
 
-    elif config.get('train_type') == 'linear_cls':
-        # train the linear classifier, can easily be trained locally
+    elif train_config.get('train_type') == 'linear_cls':
+        autoenc_conf = default_autoenc(config)
+        latent_infer_path = os.path.join(autoenc_conf.base_dir, 'latent.pkl')
+        if not os.path.exists(latent_infer_path):
+            print(f"Infering the features with the autoencoder from {os.path.join(autoenc_conf.base_dir, 'last.ckpt')}...")
+            autoenc_conf.eval_programs = ['infer']
+            train(autoenc_conf, gpus=gpus, mode='eval')
+
+        print(f"Starting the training of the linear classifier with the features from {latent_infer_path}...")
+        # train the linear classifier (not computationally heavy)
         linear_clf_conf = default_linear_clf(config)
         train_cls(linear_clf_conf, gpus=gpus)
+
     else:
         raise ValueError("Invalid train_type specified in config")

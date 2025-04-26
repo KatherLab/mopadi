@@ -8,6 +8,15 @@ For segmentation of 6 cell types to quantify changes in original and counterfact
 
 For preprocessing of whole slide images (WSIs), please refer to KatherLab's [STAMP protocol](https://github.com/KatherLab/STAMP).
 
+## Table of Contents
+
+- [Getting started](#getting-started)
+- [Training the Models from Scratch](#training-the-models-from-scratch)
+- [Pretrained Models](#pretrained-models)
+- [Datasets](#datasets)
+- [Acknowledgements](#acknowledgements)
+- [Reference](#reference)
+
 ![image info](./images/fig1_paper.png)
 
 ## Getting started
@@ -32,16 +41,21 @@ To train the models from scratch, follow these steps:
 
 3. **Preprocess the Data**: If the dataset consists of WSIs and not tiles, use the [STAMP protocol](https://github.com/KatherLab/STAMP) for preprocessing WSIs as needed. The starting point for MoPaDi is folders of tiles (color normalized or not). Multiple cohorts can be used, all tiles do not need to be in the same folder. Resizing, if needed, can be done automatically during the training. ZIP files containing tiles for each patient (STAMP's output) are also accepted and do not need to be extracted beforehand. Accepted image formats: JPEG, TIFF and PNG.
 
-4. **Configure Training**: Modify the `conf.yaml` file to match your dataset and output paths and desired training parameters.
+4. **Configure Training**: Modify the [`conf.yaml`](https://github.com/KatherLab/mopadi/blob/main/conf.yaml) file to match your dataset, define output paths and desired training parameters.
 
 5. **Run Training**: Execute the training scripts for the desired models:
   ```
   python run_mopadi.py --config conf.yaml
   ```
+You can train the following models by varying `train_type` in the configuration:
+ - **Diffusion autoencoder**: the core component of MoPaDi, encodes and decodes the images.
+ - **Latent DPM** (optional, not required for counterfactuals generation): for unconditional synthetic image generation. Enables sampling feature vectors from the latent space of semantic encoder, which are then decoded to synthetic histopathology tiles. 
+ - **Linear classifier**: the simplest classifier for linearly separable classes, based on the original [DiffAE](https://github.com/phizaz/diffae) method. Ground truth labels are needed for each tile. Enables counterfactual image generation.
+ - **MIL classifier**: more complex approach to guide counterfactual image generation, when a label is given on a patient level and not for each tile, introduced in our [preprint](https://www.biorxiv.org/content/10.1101/2024.10.29.620913v1).
 
-6. **Monitor Progress**: Training logs and checkpoints will be saved in the `base` directory defined in `conf.yaml` file.
+7. **Evaluate the Autoencoder**: adapt `utils.reconstruct_1k_images.py` for your data to reconstruct 1000 images from the test set and compute corresponding metrics: SSIM, MS-SSIM, MSE.
 
-7. TBA
+8. **Generate Counterfactuals**
 
 ## Pretrained Models
 

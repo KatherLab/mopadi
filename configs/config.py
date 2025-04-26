@@ -24,11 +24,6 @@ from torch.utils.data.distributed import DistributedSampler
 
 
 @dataclass
-class PretrainConfig(BaseConfig):
-    name: str
-    path: str
-
-@dataclass
 class MILconfig(BaseConfig):
     target_label: str = ""
     target_dict: dict = None
@@ -148,14 +143,11 @@ class TrainConfig(BaseConfig):
     T: int = 1_000
     total_samples: int = 10_000_000
     warmup: int = 0
-    pretrain: PretrainConfig = None
-    continue_from: PretrainConfig = None
+    continue_from: str = None
+    load_pretrained_autoenc: bool = False
     eval_programs: Tuple[str] = None
-    # if present load the checkpoint from this path instead
-    eval_path: str = None
     base_dir: str = 'checkpoints'
-    data_cache_dir: str = os.path.expanduser('~/cache')
-    work_cache_dir: str = os.path.expanduser('~/mycache')
+    work_cache_dir: str = os.path.expanduser('~/cache')
     # to be overridden
     name: str = ''
 
