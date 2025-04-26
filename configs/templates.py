@@ -61,6 +61,35 @@ def autoenc_base():
     conf.make_model_conf()
     return conf
 
+def default_autoenc(config):
+    conf = autoenc_base()
+    conf.base_dir = config.get('exp', {}).get('base_dir', './checkpoints/no_name')
+    conf.data_dirs = list(config.get('data', {}).get('data_dirs', None))
+    conf.test_patients_file_path = config.get('data', {}).get('test_patients_file_path', None)
+    conf.process_only_zips = config.get('data', {}).get('process_only_zips', False)
+    conf.cache_pickle_tiles_path = config.get('data', {}).get('cache_pickle_tiles_path', None)
+    conf.cache_cohort_sizes_path = config.get('data', {}).get('cache_cohort_sizes_path', None)
+    conf.split = config.get('data', {}).get('split', 'none')
+    conf.max_tiles_per_patient = config.get('data', {}).get('max_tiles_per_patient', None)
+    conf.cohort_size_threshold = config.get('data', {}).get('cohort_size_threshold', None)
+    conf.as_tensor = config.get('data', {}).get('as_tensor', True)
+    conf.do_normalize = config.get('data', {}).get('do_normalize', True)
+    conf.do_resize = config.get('data', {}).get('do_resize', False)
+
+    model_config = config.get('model', {})
+    conf.img_size = model_config.get('img_size', 224)
+    conf.batch_size = model_config.get('batch_size', 64)
+    conf.batch_size_eval = model_config.get('batch_size_eval', 64)
+    conf.total_samples = model_config.get('total_samples', 200_000_000)
+    conf.warmup = model_config.get('warmup', 0)
+    conf.net_ch = model_config.get('net_ch', 128)
+    conf.net_ch_mult = tuple(model_config.get('net_ch_mult', (1, 1, 2, 2, 4, 4)))
+    conf.net_enc_channel_mult = tuple(model_config.get('net_enc_channel_mult', (1, 1, 2, 2, 4, 4, 4)))
+    conf.eval_every_samples = model_config.get('eval_every_samples', 1_000_000)
+    conf.eval_ema_every_samples = model_config.get('eval_ema_every_samples', 1_000_000)
+
+    conf.make_model_conf()
+    return conf
 
 def texture100k_autoenc():
     conf = autoenc_base()

@@ -2,7 +2,6 @@ import os
 from io import BytesIO
 from pathlib import Path
 from collections import defaultdict
-import lmdb
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms
@@ -14,6 +13,12 @@ import numpy as np
 import os
 from dist_utils import *
 from dotenv import load_dotenv
+import re
+import pickle
+import json
+import zipfile
+import random
+import hashlib
 
 load_dotenv()
 ws_path = os.getenv('WORKSPACE_PATH')
@@ -102,25 +107,6 @@ class ImagesBaseDataset(Dataset):
 
     
 class TCGADataset(ImagesBaseDataset):
-    """
-    def __init__(self, images_dir, path_to_gt_table=None, transform=None):
-        super().__init__(images_dir, transform=transform)
-        self.transform = transform
-        self.images_dir = images_dir
-        if path_to_gt_table is not None:
-            self.df = pd.read_csv(path_to_gt_table)
-
-            self.df["full_path"] = self.df.apply(lambda row: str(os.path.join(self.images_dir, row['PATIENT_FULL'], row['FILENAME'])), axis=1)
-            self.df = self.df.set_index('full_path')
-            self.PRED_LABEL = self.df.columns.difference(['PATIENT_FULL', 'FILENAME', 'full_path', 'Unnamed: 0'])
-
-    def __getitem__(self, idx):
-        path = self.df.index[idx]
-        img = super().__getitem__(idx)['img']
-        pred_label = self.get_pred_label(idx)
-
-        return (img, pred_label)
-    """
     def __init__(self, images_dir, test_man_amp=None, transform=None):
         self.transform = transform
         self.images_dir = images_dir
@@ -181,50 +167,6 @@ class TCGADataset(ImagesBaseDataset):
         return image_details
     
 
-class TcgaBRCA512lmdbwoMetadata(Dataset):
-    def __init__(self,
-                 path=None,
-                 split=None,
-                 as_tensor: bool = True,
-                 do_augment: bool = True,
-                 do_normalize: bool = True,
-                 **kwargs):
-        self.data = BaseLMDB(path, zfill=5)
-        self.length = len(self.data)
-
-        if split is None:
-            self.offset = 0
-        elif split == 'train':
-            self.length = 85204
-            self.offset = 0
-        elif split == 'test':
-            self.length = self.length - 85204
-            self.offset = 85204
-        else:
-            raise NotImplementedError()
-
-        transform = []
-        if do_augment:
-            transform.append(transforms.RandomHorizontalFlip())
-        if as_tensor:
-            transform.append(transforms.ToTensor())
-        if do_normalize:
-            transform.append(transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)))
-        self.transform = transforms.Compose(transform)
-
-    def __len__(self):
-        return self.length
-
-    def __getitem__(self, index):
-        assert index < self.length
-        index = index + self.offset
-        print(type(self.data[index]))
-        img = self.data[index]
-        if self.transform is not None:
-            img = self.transform(img)
-        return {'img': img, 'index': index}
-
-
 class TextureDataset(ImagesBaseDataset):
     def __init__(self, images_dir, transform=None, do_augment=False, do_transform=True, do_normalize=True, ext="tif"):
         super().__init__(images_dir, transform=transform, do_augment=do_augment, do_transform=do_transform, do_normalize=do_normalize)
@@ -272,32 +214,6 @@ class JapanDataset(ImagesBaseDataset):
         if self.transform:
             image = self.transform(image)
         return (image, pred_label)
-
-
-class BrainDataset(ImagesBaseDataset):
-    def __init__(self, images_dir, path_to_gt_table, transform=None):
-        super().__init__(images_dir, transform=transform)
-        self.transform = transform
-        self.images_dir = images_dir
-        self.df = pd.read_csv(path_to_gt_table)
-        self.df = self.df.set_index('FILENAME')
-        self.PRED_LABEL = self.df.columns
-
-    def __getitem__(self, idx):
-        fname = self.df.index[idx]
-        if 'GBM' in fname:
-            folder = 'GBM'
-        else:
-            # folder = 'G4A'
-            folder = "IDHmut"
-
-        image = Image.open(os.path.join(self.images_dir, folder, fname))
-        pred_label = self.get_pred_label(idx)
-
-        if self.transform:
-            image = self.transform(image)
-
-        return {'img': image, 'labels': pred_label, 'filename': fname}
     
 
 class LungDataset(ImagesBaseDataset):
@@ -351,228 +267,293 @@ class LungDataset(ImagesBaseDataset):
         image_details = {'image': image, 'filename': filename, 'path': img_path}
         return image_details
 
+# ---------------------------    ^ old scripts
+
+def compute_root_dirs_signature(root_dirs):
+    """
+    Compute a hash signature of root_dirs based on their absolute paths and modification times.
+    """
+    m = hashlib.sha256()
+    for root in sorted(root_dirs):
+        abspath = os.path.abspath(root)
+        m.update(abspath.encode('utf-8'))
+        try:
+            mtime = str(os.path.getmtime(abspath))
+            m.update(mtime.encode('utf-8'))
+        except Exception:
+            pass  # If the folder doesn't exist, just skip
+    return m.hexdigest()
+
+def calculate_sampling_ratio(cohort_sizes, max_tiles_per_patient, cohort_size_threshold):
+    """
+    Calculate sampling ratio based on cohort sizes.
+    
+    Args:
+        cohort_sizes (dict): Cohort sizes as {cohort_id: num_tiles}.
+    
+    Returns:
+        dict: Sampling rule per cohort (None for full sampling, 1024 for limited sampling).
+    """
+    print(f"Will sample {max_tiles_per_patient} per patient for bigger cohorts than {cohort_size_threshold}")
+    sampling_ratios = {}
+    for cohort, size in cohort_sizes.items():
+        if size > cohort_size_threshold:
+            sampling_ratios[cohort] = max_tiles_per_patient
+        else:
+            sampling_ratios[cohort] = None
+    return sampling_ratios
+
+
+def load_test_patients(test_patients_file):
+    """Load test patient IDs from JSON file."""
+    print(f"Loading test patients from {test_patients_file}")
+    with open(test_patients_file, 'r') as file:
+        data = json.load(file)
+        test_patients = {patient for patient in data['Test set patients']}
+    print(f"Number of patients in the test set: {len(test_patients)}")
+    return test_patients
+
+
+def get_tiles_from_zip(zip_path):
+    """Extract .jpg tile names from a ZIP file."""
+    with zipfile.ZipFile(zip_path, 'r') as zf:
+        return [name for name in zf.namelist() if name.endswith('.jpg')]
+
+
+def load_or_calculate_cohort_sizes(root_dirs, process_only_zips, cache_file, force_recalculate=False):
+    """
+    Load cohort sizes from a cache or calculate if cache is missing or recalculation is forced.
+    This is basically needed so the scanning of directories would not be needed to do multiples times, 
+    e.g., when debugging, because it can get time consuming with multiple large cohorts.
+    """
+    signature = compute_root_dirs_signature(root_dirs)
+
+    if cache_file:
+        if os.path.exists(cache_file) and not force_recalculate:
+            print(f"Cached cohort sizes file: {cache_file}")
+            with open(cache_file, 'r') as file:
+                cache = json.load(file)
+                cached_sig = cache.get('root_dirs_signature')
+                if cached_sig == signature:
+                    print(f"Loading cached cohort sizes...")
+                    cohort_sizes = cache['cohort_sizes']
+                    cohort_sizes_wsi = cache['cohort_sizes_wsi']
+                    return cohort_sizes, cohort_sizes_wsi
+                else:
+                    print(f"Data directories have changed! Cache invalid: {cache_file}")
+
+    print("Calculating cohort sizes...")
+    cohort_sizes = defaultdict(int)
+    cohort_sizes_wsi = defaultdict(int)
+
+    for root_dir in tqdm(root_dirs):
+        print(f"Scanning {root_dir}")
+        cohort_id = root_dir.split('-')[-1]
+        wsi_count = 0
+        for patient_folder in tqdm(os.listdir(root_dir)):
+            patient_path = os.path.join(root_dir, patient_folder)
+
+            if process_only_zips and patient_folder.endswith('.zip'):
+                num_tiles = len(get_tiles_from_zip(patient_path))
+                wsi_count+=1
+            elif os.path.isdir(patient_path) and not process_only_zips:
+                exts = ('.jpg', '.jpeg', '.png', '.tif', '.tiff')
+                num_tiles = len([f for f in os.listdir(patient_path) if f.lower().endswith(exts)])
+            else:
+                continue
+
+            cohort_sizes[cohort_id] += num_tiles
+        cohort_sizes_wsi[cohort_id] = wsi_count
+
+    cache_data = {
+    'root_dirs_signature': signature,
+    'cohort_sizes': cohort_sizes,
+    'cohort_sizes_wsi': cohort_sizes_wsi,
+    }
+
+    if cache_file:
+        with open(cache_file, 'w') as file:
+            json.dump(cache_data, file, indent=1)
+        print(f"Calculated cohort sizes saved to {cache_file}")
+
+    return cohort_sizes, cohort_sizes_wsi
+
+def load_tile_paths_cache(root_dirs, cache_pickle_tiles_path):
+    if os.path.exists(cache_pickle_tiles_path):
+        with open(cache_pickle_tiles_path, "rb") as file:
+            cache = pickle.load(file)
+            signature = compute_root_dirs_signature(root_dirs)
+            if cache.get('root_dirs_signature') == signature:
+                print(f"Loaded tile paths from valid cache: {cache_pickle_tiles_path}")
+                return cache['tile_paths']
+            else:
+                print(f"Data directories have changed! Invalidating tile cache: {cache_pickle_tiles_path}")
+    return None
+
+def get_tile_paths(root_dirs, test_patients_file, split, max_tiles_per_patient, cohort_size_threshold, process_only_zips, cache_pickle_tiles_path, cache_cohort_sizes_path, force_recalculate_tile_paths=False):
+    """
+    Get image tile paths, filtering based on train/test split if needed.
+
+    Args:
+        root_dir (List[str]): Path to root directory containing patient folders.
+        test_patients_file (str): JSON file with test set patient IDs.
+        split (str): Either 'train' or 'test' to filter images.
+
+    Returns:
+        List[str]: Sorted list of tile paths for the selected split.
+    """
+    random.seed(42)
+    test_patients = load_test_patients(test_patients_file) if test_patients_file else None
+    cohort_sizes, cohort_sizes_wsi = load_or_calculate_cohort_sizes(root_dirs, process_only_zips=process_only_zips, cache_file=cache_cohort_sizes_path)
+    print(f"Cohort size (total n tiles): {dict(cohort_sizes)}")
+    print(f"Cohort size (total n WSIs): {dict(cohort_sizes_wsi)}")
+
+    if (split in ['train', 'none']) and max_tiles_per_patient is not None:
+        sampling_ratios = calculate_sampling_ratio(cohort_sizes, max_tiles_per_patient, cohort_size_threshold)
+        print(f"\nSampling rations: {sampling_ratios}")
+
+    if cache_pickle_tiles_path: 
+        if os.path.exists(cache_pickle_tiles_path) and not force_recalculate_tile_paths:
+            tiles = load_tile_paths_cache(root_dirs, cache_pickle_tiles_path)
+            if tiles:
+                return tiles
+            else:
+                print("Scanning directories to get all tiles...")
+
+    tile_paths = []
+    for root_dir in tqdm(root_dirs):
+        with os.scandir(root_dir) as patient_entries:
+            #progress_bar = tqdm(list(patient_entries), desc="Initializing tiles retrieval...", leave=False)
+            for patient_entry in patient_entries:
+                patient_path = patient_entry.path
+                patient_id = '-'.join(patient_entry.name.split('-')[:3])
+                cohort_id = root_dir.split('-')[-1]
+
+                #progress_bar.set_description(f"Scanning Cohort: {cohort_id}")
+
+                if test_patients is not None and split != 'none':
+                    if split == 'train' and patient_id in test_patients:
+                        continue  # skip test patients in train split
+                    elif split == 'test' and patient_id not in test_patients:
+                        continue  # skip non-test patients in test split
+
+                if process_only_zips and patient_entry.name.endswith('.zip'):
+                    tile_files = get_tiles_from_zip(patient_path)
+                    tile_files = [f"{patient_path}:{name}" for name in tile_files]
+                elif patient_entry.is_dir():
+                    exts = ("*.jpg", "*.jpeg", "*.png", "*.tif", "*.tiff")
+                    tile_files = [file for ext in exts for file in glob.glob(os.path.join(patient_path, ext))]
+                else:
+                    continue
+
+                if split in {'train', 'none'} and max_tiles_per_patient is not None:
+                    max_tiles = sampling_ratios.get(cohort_id)
+                    if len(tile_files) > max_tiles:
+                        tile_files = random.sample(tile_files, max_tiles)
+
+                tile_paths.extend(tile_files)
+
+    print(f"\nNumber of tiles found: {len(tile_paths)}")
+
+    cache = {
+    'root_dirs_signature': compute_root_dirs_signature(root_dirs),
+    'tile_paths': sorted(tile_paths)
+    }
+
+    if cache_pickle_tiles_path:
+        with open(cache_pickle_tiles_path, "wb") as file:
+            pickle.dump(cache, file)
+        print(f"Tile paths cached to {cache_pickle_tiles_path}")
+    return sorted(tile_paths)
+
+def extract_coords(filename):
+    """
+    Extract (x, y) coordinates from filename.
+    Example: 'tile_(1024.9512, 12811.89).jpg' → (1024.9512, 12811.89)
+    """
+    match = re.search(r'tile_\(([\d.]+), ([\d.]+)\)\.jpg', filename)
+    if match:
+        return np.array([float(match.group(1)), float(match.group(2))], dtype=np.float32)
+    # Return a dummy array, not None to avoid errors when creating batches
+    return np.array([-1, -1], dtype=np.float32)
+
+class TilesDataset(Dataset):
+    def __init__(self, root_dirs, test_patients_file=None, split='none', transform=None, max_tiles_per_patient=None, cohort_size_threshold=1_400_000, process_only_zips=False, cache_pickle_tiles_path=None, cache_cohort_sizes_path=None, force_recalculate_tile_paths=False):
         """
-        image_details = []
-        for idx, row in matching_patients.iterrows():
-            fname = row['FILENAME']
-            image_path = os.path.join(self.images_dir, fname)
-            image = Image.open(image_path)
-            
-            if self.transform:
-                image = self.transform(image)
-
-            if os.path.exists(image_path):
-                label = self.get_pred_label(idx)
-                image_details.append({'image':image, 'filename': fname, 'path': image_path, 'label': label})
-        return image_details[0]
+        Args:
+            root_dir (str): Path to the root directory containing patient folders.
+            transform (callable, optional): Optional transform to apply to images.
         """
+        self.root_dirs = root_dirs
+        self.transform = transform
+        self.tile_paths = get_tile_paths(tuple(root_dirs), test_patients_file, split, max_tiles_per_patient, cohort_size_threshold, process_only_zips, cache_pickle_tiles_path, cache_cohort_sizes_path, force_recalculate_tile_paths)
 
-  
-class DatasetBase(Dataset):
-    def __init__(self, path, lmdb_class, as_tensor=True, do_augment=True, do_normalize=True, zfill=5):
-        self.data = lmdb_class(path, zfill)
-        self.length = len(self.data)
+    def __len__(self):
+        return len(self.tile_paths)
 
-        transforms_list = []
-        if do_augment:
-            transforms_list.append(transforms.RandomHorizontalFlip())
+    def __getitem__(self, index):
+        tile_path = self.tile_paths[index]
+        image = Image.open(tile_path).convert("RGB")
+        return {"img": image, "filename": os.path.basename(tile_path), 'index': index}
+
+class DefaultTilesDataset(TilesDataset):
+    def __init__(self, 
+                root_dirs: list, 
+                test_patients_file_path: str = None,
+                split: str = 'none',
+                max_tiles_per_patient: int = None,
+                cohort_size_threshold: int = 1_400_000,
+                as_tensor: bool = True,
+                do_normalize: bool = True,
+                do_resize: bool = False,
+                img_size: int = 224,
+                process_only_zips: bool = False,
+                cache_pickle_tiles_path: str = None,
+                cache_cohort_sizes_path: str = None,
+    ):
+        super().__init__(
+            root_dirs=root_dirs, 
+            test_patients_file=test_patients_file_path, 
+            split=split, 
+            max_tiles_per_patient=max_tiles_per_patient, 
+            cohort_size_threshold=cohort_size_threshold,
+            process_only_zips=process_only_zips, 
+            cache_pickle_tiles_path=cache_pickle_tiles_path,
+            cache_cohort_sizes_path=cache_cohort_sizes_path
+            )
+
+        transform_list = []
+        if do_resize:
+            transform_list.append(transforms.Resize(size=img_size, interpolation=transforms.InterpolationMode.BILINEAR))
         if as_tensor:
-            transforms_list.append(transforms.ToTensor())
+            transform_list.append(transforms.ToTensor())
         if do_normalize:
-            transforms_list.append(transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)))
-      
-        if transforms_list:
-            self.transform = transforms.Compose(transforms_list)
+                transform_list.append(transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)))
+        if transform_list:
+            self.transform = transforms.Compose(transform_list)
         else:
             self.transform = None
 
-    def __len__(self):
-        return self.length
-
     def __getitem__(self, index):
-        assert index < self.length
-        data_item, fname = self.data[index]
-        #data_item = self.data[index]
-        img = data_item if isinstance(data_item, Image.Image) else data_item['img']
-        if self.transform:
-            img = self.transform(img)
-        return {'img': img, 'index': index, 'filename': fname}
+        tile_path = self.tile_paths[index]
 
-
-class BaseLMDB(Dataset):
-    def __init__(self, path, zfill: int = 5):
-        self.zfill = zfill
-        self.env = self._open_lmdb_env(path)
-        self.length = self._get_length()
+        if ".zip:" in tile_path:
+            zip_path, internal_path = tile_path.split(":", 1)
             
-    def _open_lmdb_env(self, path):
-        env = lmdb.open(path, max_readers=32, readonly=True, lock=False, readahead=False, meminit=False)
-        if not env:
-            raise IOError('Cannot open lmdb dataset', path)
-        return env
-    
-    def _get_length(self):
-        with self.env.begin(write=False) as txn:
-            return int(txn.get('length'.encode('utf-8')).decode('utf-8'))
+            with zipfile.ZipFile(zip_path, 'r') as z:
+                with z.open(internal_path) as img_file:
+                    image = Image.open(BytesIO(img_file.read())).convert("RGB")
+            patient_id = '.'.join(os.path.basename(tile_path).split('.zip')[0].split('.')[:2])
+        else: 
+            image = Image.open(tile_path).convert("RGB")
+            patient_id = '.'.join(os.path.basename(os.path.dirname(tile_path)).split('.')[:2])
 
-    def __len__(self):
-        return self.length
+        tile_coords = extract_coords(tile_path)
 
-    def __getitem__(self, index):
-        with self.env.begin(write=False) as txn:
-            key = f'{str(index).zfill(self.zfill)}'.encode('utf-8')
-            try:
-                filename_key = f"filename_{str(index).zfill(5)}".encode("utf-8")
-                filename = txn.get(filename_key).decode("utf-8")
-            except:
-                filename = None
-
-            img_bytes = txn.get(key)
-
-        buffer = BytesIO(img_bytes)
-        img = Image.open(buffer).convert('RGB')
-        return img, filename
-
-
-class BaseLMDBwithMetadata(BaseLMDB):
-    def __init__(self, path, zfill: int = 5, patient_id = "", coords=""):
-        self.patient_id = patient_id
-        self.coords = coords
-        super().__init__(path, zfill)
-        self.patient_coord_to_index = {}
-        self.patient_to_coords = defaultdict(list)
-
-        for i in range(self.length):
-            data_item = self.__getitem__(i)
-            patient_id = data_item['patient_id']
-            coords = data_item['coords']
-
-            key = (patient_id, coords)
-            self.patient_coord_to_index[key] = i
-            self.patient_to_coords[patient_id].append(coords)
-
-    def __getitem__(self, index):
-        key_img = f'{str(index).zfill(self.zfill)}'.encode('utf-8')
-        key_meta = f'meta_{str(index).zfill(self.zfill)}'.encode('utf-8')
-        key_coord = f'coord_{str(index).zfill(self.zfill)}'.encode('utf-8')
-        
-        with self.env.begin(write=False) as txn:
-            img_bytes = txn.get(key_img)
-            patient_id = txn.get(key_meta).decode('utf-8')
-            coords = txn.get(key_coord).decode('utf-8')
-
-        buffer = BytesIO(img_bytes)
-        img = Image.open(buffer)
-        return {'img': img, 'patient_id': patient_id, "coords": coords}
-
-    def get_coords_for_patient(self, patient_id):
-        return self.patient_to_coords.get(patient_id, [])
-
-    def get_indices_by_patient_and_coords(self, patient_id, coords):
-        """Retrieve indices for a given patient_id and coords"""
-        key = (patient_id, coords)
-        return self.patient_coord_to_index.get(key, None)
-
-    def get_patient_id_for_index(self, index):
-        """Retrieve the patient ID for a given global index"""
-        meta_key = f"meta_{str(index).zfill(5)}".encode("utf-8")
-        with self.env.begin(write=False) as txn:
-            patient_id = txn.get(meta_key)
-            if patient_id:
-                return patient_id.decode("utf-8")
-        return None
-
-    def get_all_patient_ids(self):
-        patient_ids = set()
-        for i in range(self.length):
-            patient_id = self.get_patient_id_for_index(i)
-            if patient_id:
-                patient_ids.add(patient_id)
-        return list(patient_ids)
-    
-
-class TextureLMDB(DatasetBase):
-    def __init__(self,
-                 path=os.path.expanduser('datasets/texture/Texture100k.lmdb'),
-                 as_tensor: bool = True,
-                 do_augment: bool = True,
-                 do_normalize: bool = True,
-                 zfill: int = 5,
-                ):
-        
-        super().__init__(path, lmdb_class=BaseLMDB, as_tensor=as_tensor, do_augment=do_augment, do_normalize=do_normalize, zfill=zfill)
-
-
-class TcgaCRCwoMetadata(DatasetBase):
-    def __init__(self,
-                 path=None,
-                 as_tensor: bool = True,
-                 do_augment: bool = True,
-                 do_normalize: bool = True,
-                 zfill: int = 5,
-                 ):
-
-        super().__init__(path, lmdb_class=BaseLMDB, as_tensor=as_tensor, do_augment=do_augment, do_normalize=do_normalize, zfill=zfill)
-
-
-class TcgaCRCwMetadata(DatasetBase):
-    def __init__(self,
-                 path=None,
-                 as_tensor: bool = True,
-                 do_augment: bool = True,
-                 do_normalize: bool = True,
-                 zfill: int = 5):
-
-        super().__init__(path, lmdb_class=BaseLMDBwithMetadata, as_tensor=as_tensor, do_augment=do_augment, do_normalize=do_normalize, zfill=zfill)
-
-    def __getitem__(self, index):
-        assert index < self.length
-        data_item = self.data[index]
-        img = data_item['img']
         if self.transform:
-            img = self.transform(img)
-        return {'img': img, 'index': index, 'patient_id': data_item['patient_id'], "coords": data_item["coords"]}
-    
-    def get_by_patient_coords(self, patient_id, coords):
-        """Retrieve data item by patient ID and coordinates."""
-        if (patient_id, coords) in self.data.patient_coord_to_index:
-            index = self.data.patient_coord_to_index[(patient_id, coords)]
-            return self.__getitem__(index)
-        else:
-            raise ValueError(f"No data found for patient_id={patient_id} and coords={coords}")
+            image = self.transform(image)
 
-
-class BrainLmdb(DatasetBase):
-    def __init__(self,
-                 path=os.path.expanduser('datasets/brain/brain-lmdb'),
-                 as_tensor: bool = True,
-                 do_augment: bool = True,
-                 do_normalize: bool = True,
-                 zfill=5):
-
-        super().__init__(path, lmdb_class=BaseLMDB, as_tensor=as_tensor, do_augment=do_augment, do_normalize=do_normalize, zfill=zfill)
-
-
-class PanCancerLmdb(DatasetBase):
-    def __init__(self,
-                 path=None,
-                 as_tensor: bool = True,
-                 do_augment: bool = True,
-                 do_normalize: bool = True,
-                 zfill=5):
-
-        super().__init__(path, lmdb_class=BaseLMDB, as_tensor=as_tensor, do_augment=do_augment, do_normalize=do_normalize, zfill=zfill)
-
-
-class LungLmdb(DatasetBase):
-    def __init__(self,
-                 path=os.path.expanduser('datasets/lung/subtypes-lmdb-train'),
-                 as_tensor: bool = True,
-                 do_augment: bool = True,
-                 do_normalize: bool = True,
-                 zfill=5):
-
-        super().__init__(path, lmdb_class=BaseLMDB, as_tensor=as_tensor, do_augment=do_augment, do_normalize=do_normalize, zfill=zfill)
+        return {"img": image, "coords": tile_coords, "filename": tile_path, "index": index}
 
 
 class AttrDatasetBase(Dataset):

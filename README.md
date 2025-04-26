@@ -1,10 +1,12 @@
 # MoPaDi - Morphing Histopathology Diffusion
 
-MoPaDi combines [Diffusion Autoencoders](https://openaccess.thecvf.com/content/CVPR2022/html/Preechakul_Diffusion_Autoencoders_Toward_a_Meaningful_and_Decodable_Representation_CVPR_2022_paper.html) with multiple instance learning (MIL) for explainability of deep learning classifiers in histopathology. This repository contains the supplementary material for the following [preprint](https://www.biorxiv.org/content/10.1101/2024.10.29.620913v1):
+MoPaDi combines [Diffusion Autoencoders](https://openaccess.thecvf.com/content/CVPR2022/html/Preechakul_Diffusion_Autoencoders_Toward_a_Meaningful_and_Decodable_Representation_CVPR_2022_paper.html) with multiple instance learning (MIL) for explainability of deep learning classifiers in histopathology. 
 
-> Žigutytė, L., Lenz, T., Han, T., Hewitt, K. J., Reitsam, N. G., Foersch, S., Carrero, Z. I., Unger, M., Pearson, T. A., Truhn, D. & Kather, J. N. (2024). Counterfactual Diffusion Models for Mechanistic Explainability of Artificial Intelligence Models in Pathology. bioRxiv, 2024.
+> **_NOTE:_** This repository contains an updated version of the codebase. For the experiments described in the [preprint](https://www.biorxiv.org/content/10.1101/2024.10.29.620913v1), please refer to [version 0.0.1 of MoPaDi](https://github.com/KatherLab/mopadi/releases/tag/v0.0.1).
 
 For segmentation of 6 cell types to quantify changes in original and counterfactual images, [DeepCMorph](https://github.com/aiff22/DeepCMorph) pretrained models were used.
+
+For preprocessing of whole slide images (WSIs), please refer to KatherLab's [STAMP protocol](https://github.com/KatherLab/STAMP).
 
 ![image info](./images/fig1_paper.png)
 
@@ -13,12 +15,33 @@ For segmentation of 6 cell types to quantify changes in original and counterfact
 Create a virtual environment, e.g. with conda or mamba, clone the repository, and install required packages:
 
 ```
-mamba create -n mopadi python=3.8 -c conda-forge
+mamba create -n mopadi python=3.11 -c conda-forge
 pip install -r requirements.txt
 ```
 
 Then obtain access to pretrained models on [Hugging Face](https://huggingface.co/KatherLab/MoPaDi).
 Once the environment is set up and access to models has been granted, you can run the example notebooks (all the necessary data for these examples has been provided).
+
+## Training the Models from Scratch
+
+To train the models from scratch, follow these steps:
+
+1. **Prepare the Environment**: Ensure you have set up the virtual environment and installed the required packages.
+
+2. **Download Datasets**: Obtain the [Datasets](#Datasets) used in the preprint or use your own.
+
+3. **Preprocess the Data**: If the dataset consists of WSIs and not tiles, use the [STAMP protocol](https://github.com/KatherLab/STAMP) for preprocessing WSIs as needed. The starting point for MoPaDi is folders of tiles (color normalized or not). Multiple cohorts can be used, all tiles do not need to be in the same folder. Resizing, if needed, can be done automatically during the training. ZIP files containing tiles for each patient (STAMP's output) are also accepted and do not need to be extracted beforehand. Accepted image formats: JPEG, TIFF and PNG.
+
+4. **Configure Training**: Modify the `conf.yaml` file to match your dataset and output paths and desired training parameters.
+
+5. **Run Training**: Execute the training scripts for the desired models:
+  ```
+  python run_mopadi.py --config conf.yaml
+  ```
+
+6. **Monitor Progress**: Training logs and checkpoints will be saved in the `base` directory defined in `conf.yaml` file.
+
+7. TBA
 
 ## Pretrained Models
 
@@ -46,7 +69,7 @@ This project was built upon a [DiffAE](https://github.com/phizaz/diffae) (MIT li
 ## Reference
 If you find our work useful for your research or if you use parts of the code please consider citing our [preprint](https://www.biorxiv.org/content/10.1101/2024.10.29.620913v1):
 
-> Žigutytė, L., Lenz, T., Han, T., Hewitt, K. J., Reitsam, N. G., Foersch, S., ... & Kather, J. N. (2024). Counterfactual Diffusion Models for Mechanistic Explainability of Artificial Intelligence Models in Pathology. bioRxiv, 2024.
+> Žigutytė, L., Lenz, T., Han, T., Hewitt, K. J., Reitsam, N. G., Foersch, S., Carrero, Z. I., Unger, M., Pearson, T. A., Truhn, D. & Kather, J. N. (2024). Counterfactual Diffusion Models for Mechanistic Explainability of Artificial Intelligence Models in Pathology. bioRxiv, 2024.
 
 ```
 @misc{zigutyte2024mopadi,

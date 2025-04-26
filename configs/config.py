@@ -21,16 +21,6 @@ from multiprocessing import get_context
 import os
 import shutil
 from torch.utils.data.distributed import DistributedSampler
-from dotenv import load_dotenv
-
-load_dotenv()
-ws_path = os.getenv("WORKSPACE_PATH")
-
-data_paths = {
-    'tcga_crc_512': 'datasets/tcga_crc_512_lmdb-train',
-    'tcga_brca_512': 'datasets/brca/tcga/tcga-brca-512.lmdb',
-    'pancancer': 'datasets/pancancer/japan-lmdb-train-new',
-}
 
 
 @dataclass
@@ -164,7 +154,6 @@ class TrainConfig(BaseConfig):
     # if present load the checkpoint from this path instead
     eval_path: str = None
     base_dir: str = 'checkpoints'
-    use_cache_dataset: bool = False
     data_cache_dir: str = os.path.expanduser('~/cache')
     work_cache_dir: str = os.path.expanduser('~/mycache')
     # to be overridden
@@ -191,15 +180,6 @@ class TrainConfig(BaseConfig):
         # we try to use the local dirs to reduce the load over network drives
         # hopefully, this would reduce the disconnection problems with sshfs
         return f'{self.work_cache_dir}/eval_images/{self.data_name}_size{self.img_size}_{self.eval_num_images}'
-
-    @property
-    def data_path(self):
-        # may use the cache dir
-        path = data_paths[self.data_name]
-        if self.use_cache_dataset and path is not None:
-            path = use_cached_dataset_path(
-                path, f'{self.data_cache_dir}/{self.data_name}')
-        return path
 
     @property
     def logdir(self):
@@ -289,25 +269,21 @@ class TrainConfig(BaseConfig):
         return self._make_latent_diffusion_conf(T=self.latent_T_eval)
 
     def make_dataset(self, path=None, **kwargs):
-        print(f"Used dataset: {self.data_name}, {path} or {self.data_path}")
-        if self.data_name == 'texture':
-            return TextureLMDB(path=path or self.data_path, **kwargs)
-        elif self.data_name == 'tcga_crc':
-            return TcgaCRCwoMetadata(path=path or self.data_path, **kwargs)
-        elif self.data_name == 'tcga_crc_512':
-            return TcgaCRCwoMetadata(path=path or self.data_path, **kwargs)
-        elif self.data_name == 'tcga_brca_512':
-            return TcgaBRCA512lmdbwoMetadata(path=path or self.data_path, **kwargs)
-        elif self.data_name == 'brain':
-            return BrainLmdb(path=path or self.data_path, **kwargs)
-        elif self.data_name == 'pancancer':
-            return PanCancerLmdb(path=path or self.data_path, **kwargs)
-        elif self.data_name == 'tcga_brca_512':
-            return TcgaBRCA512lmdbwoMetadata(path=path or self.data_path,
-                                   image_size=self.img_size,
-                                   **kwargs)
-        else:
-            raise NotImplementedError()
+        print(f"Tiles will be loaded from: {self.data_dirs}")
+        return DefaultTilesDataset(
+            root_dirs=self.data_dirs,
+            test_patients_file_path=self.test_patients_file_path,
+            split=self.split,
+            max_tiles_per_patient=self.max_tiles_per_patient,
+            cohort_size_threshold=self.cohort_size_threshold,
+            as_tensor=self.as_tensor,
+            do_normalize=self.do_normalize,
+            do_resize=self.do_resize,
+            img_size=self.img_size,
+            process_only_zips=self.process_only_zips,
+            cache_pickle_tiles_path=self.cache_pickle_tiles_path,
+            cache_cohort_sizes_path=self.cache_cohort_sizes_path,
+            **kwargs)
 
     def make_loader(self,
                     dataset,

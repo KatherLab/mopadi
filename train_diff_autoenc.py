@@ -25,7 +25,6 @@ from torchvision.utils import make_grid, save_image
 from configs.config import *
 from dataset import *
 from dist_utils import *
-from lmdb_writer import *
 from metrics import *
 from renderer import *
 
@@ -51,7 +50,7 @@ class LitModel(pl.LightningModule):
         model_size = 0
         for param in self.model.parameters():
             model_size += param.data.nelement()
-        print('Model params: %.2f M' % (model_size / 1024 / 1024))
+        #print('Model params: %.2f M' % (model_size / 1024 / 1024))
 
         self.sampler = conf.make_diffusion_conf().make_sampler()
         self.eval_sampler = conf.make_eval_diffusion_conf().make_sampler()
@@ -186,9 +185,7 @@ class LitModel(pl.LightningModule):
         ##############################################
 
         self.train_data = self.conf.make_dataset()
-        print('train data:', len(self.train_data))
         self.val_data = self.train_data
-        print('val data:', len(self.val_data))
 
     def _train_dataloader(self, drop_last=True):
         """
@@ -870,23 +867,41 @@ def is_time(num_samples, every, step_size):
 
 
 def train(conf: TrainConfig, gpus, nodes=1, mode: str = 'train'):
-    print('conf:', conf.name)
-    # assert not (conf.fp16 and conf.grad_clip > 0
-    #             ), 'pytorch lightning has bug with amp + gradient clipping'
     model = LitModel(conf)
+    model.setup()
 
-    if not os.path.exists(conf.logdir):
-        os.makedirs(conf.logdir)
+    print("\n=== SANITY CHECK: Checking first batch from DataLoader ===")
+    dl = model.train_dataloader()
+    batch = next(iter(dl))
+    if isinstance(batch, dict):
+        for k, v in batch.items():
+            print(f"  {k}: shape={getattr(v, 'shape', None)}, dtype={getattr(v, 'dtype', None)}")
+    elif isinstance(batch, (tuple, list)):
+        print("  tuple/list:", [getattr(b, 'shape', None) for b in batch])
+    else:
+        print("  type:", type(batch))
+
+    if 'coords' in batch:
+        coords = batch['coords'] 
+        if (coords == -1).all(dim=1).any():
+            print("[WARNING] Some or all filenames do not contain coordinates (or they were not extracted correctly)! Using dummy value [-1, -1] for tiles without coords.")
+    print("=== END SANITY CHECK ===\n")
+
+    if get_rank() == 0:  # Ensure only the main worker creates the directory
+        if not os.path.exists(conf.logdir):
+            os.makedirs(conf.logdir)
+
     checkpoint = ModelCheckpoint(dirpath=f'{conf.logdir}',
                                  save_last=True,
                                  save_top_k=1,
                                  every_n_train_steps=conf.save_every_samples //
                                  conf.batch_size_effective)
-    checkpoint_path = f'{conf.logdir}/last.ckpt'
-    print('ckpt path:', checkpoint_path)
-    if os.path.exists(checkpoint_path):
+
+    checkpoint_model_path = os.path.join(conf.logdir, 'last.ckpt')
+    print('Checkpoint model path:', checkpoint_model_path)
+    if os.path.exists(checkpoint_model_path):
         resume = True
-        print(f'resuming training, model loaded from {resume}!')
+        print(f'resuming training, model loaded from {checkpoint_model_path}!')
     else:
         if conf.continue_from is not None:
             # continue from a checkpoint
@@ -920,11 +935,12 @@ def train(conf: TrainConfig, gpus, nodes=1, mode: str = 'train'):
         accelerator = 'cpu'
 
     print(f'Accelerator: {accelerator}, strategy: {strategy}, devices: {gpus}, num nodes: {nodes}')
+
     trainer = pl.Trainer(
         max_steps=conf.total_samples // conf.batch_size_effective,
-        # resume_from_checkpoint=checkpoint_path,  # older pytorch-lightning version (e.g. 2.0.6)
-        # gpus=gpus,                      # older pytorch-lightning version (e.g. 2.0.6)
-        devices=gpus,                     # only for newer pytorch-lightning versions (2.1.1)
+        # resume_from_checkpoint=checkpoint_model_path,  # older pytorch-lightning version (e.g. 2.0.6)
+        # gpus=gpus,                               # older pytorch-lightning version (e.g. 2.0.6)
+        devices=gpus,                              # only for newer pytorch-lightning versions (>2.1.1)
         strategy=strategy,
         num_nodes=nodes,
         accelerator=accelerator,
@@ -943,7 +959,7 @@ def train(conf: TrainConfig, gpus, nodes=1, mode: str = 'train'):
 
     if mode == 'train':
         if resume:
-            trainer.fit(model, ckpt_path=checkpoint_path)
+            trainer.fit(model, ckpt_path=checkpoint_model_path)
         else:
             trainer.fit(model)
     elif mode == 'eval':
