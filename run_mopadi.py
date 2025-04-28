@@ -85,7 +85,7 @@ if __name__ == '__main__':
         print(f"Starting the training of the linear classifier with the features from {latent_infer_path}...")
         # train the linear classifier (not computationally heavy)
         linear_clf_conf = default_linear_clf(config)
-        train_cls(linear_clf_conf, gpus=gpus)
+        train_cls(linear_clf_conf, gpus=[gpus[0]])  # use only one GPU because something doesn't work with distributed training
 
     else:
         raise ValueError("Invalid train_type specified in config")

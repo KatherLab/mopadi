@@ -591,11 +591,29 @@ class DefaultAttrDataset(Dataset):
             cache_pickle_tiles_path=cache_pickle_tiles_path,
             cache_cohort_sizes_path=cache_cohort_sizes_path,
         )
-
+        if attr_path is None or os.path.exists(attr_path) is False:
+            raise FileNotFoundError(f"Attribute file not found: {attr_path}")
         with open(attr_path) as f:
-            f.readline()  # discard the top line
-            self.df = pd.read_csv(f, delim_whitespace=True)
+            self.df = pd.read_csv(f)
+            print(self.df)
         self.df = self.df.set_index('FILENAME')
+
+    def get_valid_indices(self):
+        """
+        Filters the dataset based on which filenames are present in the label table (self.df).
+        Returns the valid indices of the dataset.
+        """
+        valid_indices = []
+        tile_paths = self.tiles_dataset.tile_paths  # all tile filepaths
+        label_filenames = set(self.df.index)       # set of valid filenames from label table
+        print(f"Label fnames [:10]: {list(label_filenames)[:10]}")
+        print(f"tile_paths [:10]: {list(tile_paths)[:10]}")
+        for idx, path in enumerate(tile_paths):
+            fname = os.path.basename(path)
+            if fname in label_filenames:
+                valid_indices.append(idx)
+        print(f"Number of images found with matching labels: {len(valid_indices)}")
+        return valid_indices
 
     def __len__(self):
         return len(self.tiles_dataset)

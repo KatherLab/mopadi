@@ -72,16 +72,22 @@ class ClsModel(pl.LightningModule):
             self.ema_model.requires_grad_(False)
             self.ema_model.eval()
 
-            if conf.pretrain is not None:
-                print(f'loading pretrain ... {conf.pretrain.name}')
-                state = torch.load(conf.pretrain.path, map_location='cpu')
-                print('step:', state['global_step'])
-                self.load_state_dict(state['state_dict'], strict=False)
+            pretrained_path = os.path.join(conf.base_dir, 'autoenc', 'last.ckpt')
+            if conf.load_pretrained_autoenc:
+                if os.path.exists(pretrained_path):
+                    print(f'Loading pretrained model from {pretrained_path}')
+                    state = torch.load(pretrained_path, map_location='cpu')
+                    print('step:', state['global_step'])
+                    self.load_state_dict(state['state_dict'], strict=False)
+                else:
+                    raise FileNotFoundError(f"Pretrained autoencoder checkpoint not found at {pretrained_path}")
+
 
             # load the latent stats
-            if conf.manipulate_znormalize:
-                print('loading latent stats ...')
-                state = torch.load(conf.latent_infer_path)
+            latent_infer_path = os.path.join(conf.base_dir, 'latent.pkl')
+            if conf.manipulate_znormalize and os.path.exists(latent_infer_path):
+                print('Loading pre-extracted features of the encoder...')
+                state = torch.load(latent_infer_path)
                 self.conds = state['conds']
                 self.register_buffer('conds_mean',
                                      state['conds_mean'][None, :])
@@ -90,22 +96,8 @@ class ClsModel(pl.LightningModule):
                 self.conds_mean = None
                 self.conds_std = None
 
-        if conf.manipulate_mode == 'texture':
-            num_cls = len(TextureAttrDataset.id_to_cls)
-        elif conf.manipulate_mode == 'tcga_crc_msi':
-            num_cls = len(TcgaCrcMsiAttrDataset.id_to_cls)
-        elif conf.manipulate_mode == 'tcga_crc_braf':
-            num_cls = len(TCGACRCBRAFAttrDataset.id_to_cls)
-        elif conf.manipulate_mode == 'brain':
-            num_cls = len(BrainAttrDataset.id_to_cls)
-        elif conf.manipulate_mode == 'pancancer':
-            num_cls = len(PanCancerClsDataset.id_to_cls)
-        elif conf.manipulate_mode == 'lung':
-            num_cls = len(LungClsDataset.id_to_cls)
-        elif conf.manipulate_mode == 'liver_cancer_types':
-            num_cls = len(LiverCancerTypesClsDataset.id_to_cls)
-        else:
-            raise NotImplementedError()
+        print(f"Classes: {conf.id_to_cls}")
+        num_cls = len(conf.id_to_cls)
 
         # classifier
         if conf.train_mode == TrainMode.manipulate:
@@ -157,26 +149,22 @@ class ClsModel(pl.LightningModule):
         return cond
 
     def load_dataset(self):
-        if self.conf.manipulate_mode == 'texture':
-            return TextureAttrDataset(do_augment=True)
-        if self.conf.manipulate_mode == 'tcga_crc_msi':
-            return TcgaCrcMsiAttrDataset(do_augment=True)
-        if self.conf.manipulate_mode == 'tcga_crc_braf':
-            return TCGACRCBRAFAttrDataset(data_paths['tcga_crc_braf'],
-                                    data_paths['tcga_crc_anno_braf'],
-                                    do_augment=True)
-        if self.conf.manipulate_mode == 'brain':
-            return BrainAttrDataset(do_augment=True)
-        if self.conf.manipulate_mode == 'lung':
-            return LungClsDataset(do_augment=True)
-        if self.conf.manipulate_mode == 'pancancer':
-            return PanCancerClsDataset(do_augment=True)
-        if self.conf.manipulate_mode == 'liver_cancer_types':
-            return LiverCancerTypesClsDataset(do_augment=True)
-        else:
-            raise NotImplementedError()
-        
-        
+        return DefaultAttrDataset(
+            root_dirs=self.conf.data_dirs,
+            attr_path=self.conf.attr_path,
+            id_to_cls=self.conf.id_to_cls,
+            test_patients_file_path=self.conf.test_patients_file_path,
+            split=self.conf.split,
+            max_tiles_per_patient=self.conf.max_tiles_per_patient,
+            cohort_size_threshold=self.conf.cohort_size_threshold,
+            as_tensor=self.conf.as_tensor,
+            do_normalize=self.conf.do_normalize,
+            do_resize=self.conf.do_resize,
+            img_size=self.conf.img_size,
+            process_only_zips=self.conf.process_only_zips,
+            cache_pickle_tiles_path=self.conf.cache_pickle_tiles_path,
+            cache_cohort_sizes_path=self.conf.cache_cohort_sizes_path,
+        )
 
     def setup(self, stage=None) -> None:
         ##############################################
@@ -198,7 +186,7 @@ class ClsModel(pl.LightningModule):
         conf = self.conf.clone()
         conf.batch_size = self.batch_size
 
-        valid_indices = self.get_valid_indices(self.train_data)
+        valid_indices = self.train_data.get_valid_indices()
         random.shuffle(valid_indices)
         sampler = CustomSampler(self.train_data, valid_indices)  # works just for nondistributed training
 
@@ -215,26 +203,6 @@ class ClsModel(pl.LightningModule):
                                           sampler=sampler)
         return dataloader
 
-    def get_valid_indices(self, dataset):
-        """
-        Filters the dataset based on the valid filenames from the attr_path file.
-        Returns the valid indices of the LMDB dataset.
-        """
-        valid_indices = []
-        with lmdb.open(self.train_data.lmdb_path, readonly=True) as env:
-            with env.begin(write=False) as txn:
-                length_value = txn.get("length".encode("utf-8"))
-                if length_value is not None:
-                    length = int(length_value.decode("utf-8"))
-                print(f"Length of LMDB dataset: {length}")
-                for idx in tqdm(range(length)):
-                    filename_key = f"filename_{str(idx).zfill(5)}".encode("utf-8")
-                    filename = txn.get(filename_key).decode("utf-8")
-                    fname = filename.split("/")[-2] + "/" + filename.split("/")[-1]
-                    if fname in dataset.valid_fnames:
-                        valid_indices.append(idx)
-        print(f"Number of respective classes images found: {len(valid_indices)}")
-        return valid_indices
 
     @property
     def batch_size(self):
@@ -334,7 +302,6 @@ def ema(source, target, decay):
 
 
 def train_cls(conf: TrainConfig, gpus):
-    print('conf:', conf.name)
     model = ClsModel(conf)
 
     if not os.path.exists(conf.logdir):

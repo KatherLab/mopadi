@@ -5,17 +5,17 @@ gpus: [0, 1]
 
 exp:
   # Directory where training output will be saved, typically at checkpoints/EXPERIMENT_NAME
-  base_dir: /mnt/bulk-mars/laura/diffae/mopadi/checkpoints/texture100k-trial2
+  base_dir: checkpoints/experiment_name
     
 train:
   # Which model to train: the order is autoencoder -> latent DPM (optional, for unconditional images generation) -> linear classifier or MIL classifier
-  train_type: autoenc   # options: autoenc, latent_dpm, linear_cls (not implemented yet), mil_clf
+  train_type: linear_cls   # options: autoenc, latent_dpm, linear_cls, mil_clf (not implemented yet)
 
   data:
     # Directories containing tiles; can be multiple cohorts; by default will get all files with any of these extensions: ['.jpg', '.jpeg', '.png', '.tif', '.tiff']
     data_dirs:
-      - /mnt/bulk-mars/laura/diffae/data/texture100k/NCT-CRC-HE-100K
-      #- path2
+      - /path/to/tiles/folder
+      #- /path/to/anothet/tiles/folder
 
     # Optional, will not use these patients for training the autoencoder or will only use them if split is 'test'
     # For an example of such file, please check datasets/patient_splits/TCGA_CRC_test_split.json
@@ -33,7 +33,8 @@ train:
     # This enables processing zipped tiles outputted by STAMP, no need to extract them
     process_only_zips: false
 
-    # This is useful in case multiple huge cohorts are used for the training and debugging needs to be done. Otherwise, can be ignored
+    # This is useful in case multiple huge cohorts are used for the training, because scanning directories takes a while, 
+    # and it's performed multiple times. For small cohorts that are scanned very fast, the following two parameters can be ignored.
     # To enable saving these cache files, uncomment and define the paths
     #cache_pickle_tiles_path: /path/to/cache.pkl
     #cache_cohort_sizes_path: /path/to/cohort_sizes_cache.json
@@ -44,6 +45,13 @@ train:
     img_size: 224
     do_normalize: true   # for the diffusion process to work well images are normalized with mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)
 
+    # ONLY FOR THE LINEAR CLASSIFIER
+    id_to_cls: 
+        - class1
+        - class2
+        - class3
+    attr_path: /path/to/ground_truth.csv
+
   model:
     # All the parameters that can be modified can be found in the configs/config.py. 
     # Default values for different models can also be found in configs/templates.py, configs/templates_cls.py and configs/templates_latent.py
@@ -51,17 +59,16 @@ train:
     # Total samples - not the total number of tiles, but how many samples the model will see before the training 
     # is terminated, i.e., epoch number will depend on this number. Typically set high, and the training is stopped 
     # for examples after 72-98h on HPC when the FID score is low enough (<20 good; <10 excellent)
-    total_samples: 200 #_000_000   # default: 200_000_000 (autoencoder), 130_000_000 (latent DPM), 300_000 (linear classifier)
+    total_samples: 200000000   # default: 200000000 (autoencoder), 130000000 (latent DPM), 300000 (linear classifier)
 
     # Number of samples the model 'sees' before the evaluation step is performed (LPIPS, FID is computed)
-    eval_every_samples: 40       # default: 1_000_000 (autoencoder)        
-    eval_ema_every_samples: 40   # default: 1_000_000 (autoencoder)   
+    #eval_every_samples: 1000000       # default: 1000000 (autoencoder)
+    #eval_ema_every_samples: 1000000   # default: 1000000 (autoencoder)   
 
     # Select the batch size according to the available GPU memory to avoid OOM errors, but high enough to efficiently utilize the GPU
     # The batch size is divided by the number of GPUs, so if you have 4 GPUs and set batch_size=64, each GPU will see 16 samples
-    batch_size: 16               # default: 64 (autoencoder & latent DPM), 32 (linear classifier)
-    batch_size_eval: 16          # default: 32
-    warmup: 0                     # default: 0
+    #batch_size: 64               # default: 64 (autoencoder & latent DPM), 32 (linear classifier)
+    #batch_size_eval: 64 
+    warmup: 0                    # default: 0
 
-manipulate:
-  
+#manipulate:
