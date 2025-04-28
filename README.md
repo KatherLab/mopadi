@@ -2,13 +2,14 @@
 
 MoPaDi combines [Diffusion Autoencoders](https://openaccess.thecvf.com/content/CVPR2022/html/Preechakul_Diffusion_Autoencoders_Toward_a_Meaningful_and_Decodable_Representation_CVPR_2022_paper.html) with multiple instance learning (MIL) for explainability of deep learning classifiers in histopathology. 
 
-> **_NOTE:_** This repository contains an updated version of the codebase. For the experiments described in the [preprint](https://www.biorxiv.org/content/10.1101/2024.10.29.620913v1), please refer to [version 0.0.1 of MoPaDi](https://github.com/KatherLab/mopadi/releases/tag/v0.0.1).
+> [!IMPORTANT] This repository contains an updated version of the codebase. For the experiments described in the [preprint](https://www.biorxiv.org/content/10.1101/2024.10.29.620913v1), please refer to [version 0.0.1 of MoPaDi](https://github.com/KatherLab/mopadi/tree/v0.0.1).
 
 For segmentation of 6 cell types to quantify changes in original and counterfactual images, [DeepCMorph](https://github.com/aiff22/DeepCMorph) pretrained models were used.
 
 For preprocessing of whole slide images (WSIs), please refer to KatherLab's [STAMP protocol](https://github.com/KatherLab/STAMP).
 
-## Table of Contents
+---
+**Table of Contents:**
 
 - [Getting started](#getting-started)
 - [Training the Models from Scratch](#training-the-models-from-scratch)
@@ -21,15 +22,26 @@ For preprocessing of whole slide images (WSIs), please refer to KatherLab's [STA
 
 ## Getting started
 
-Create a virtual environment, e.g. with conda or mamba, clone the repository, and install required packages:
+Clone the repository and create a virtual environment to install required packages, e.g. with uv (instructions below), conda or mamba.
 
-```
-mamba create -n mopadi python=3.11 -c conda-forge
-pip install -r requirements.txt
-```
+1. **Install [`uv`](https://docs.astral.sh/uv/getting-started/installation/)**
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
 
-Then obtain access to pretrained models on [Hugging Face](https://huggingface.co/KatherLab/MoPaDi).
-Once the environment is set up and access to models has been granted, you can run the example notebooks (all the necessary data for these examples has been provided).
+2. **Sync dependencies**. In the root of this repository, run:
+   ```bash
+   uv sync
+   ```
+   This creates a virtual environment at `.venv/` and installs all necessary Python dependencies.
+
+3. **Activate the environment**:
+   ```bash
+   source .venv/bin/activate
+   ```
+
+You can obtain access to pretrained models on [Hugging Face](https://huggingface.co/KatherLab/MoPaDi).
+Once the environment is set up and access to models has been granted, you can run the example notebooks (all the necessary data for these examples has been provided) or train your own models.
 
 ## Training the Models from Scratch
 
@@ -39,23 +51,25 @@ To train the models from scratch, follow these steps:
 
 2. **Download Datasets**: Obtain the [Datasets](#Datasets) used in the preprint or use your own.
 
-3. **Preprocess the Data**: If the dataset consists of WSIs and not tiles, use the [STAMP protocol](https://github.com/KatherLab/STAMP) for preprocessing WSIs as needed. The starting point for MoPaDi is folders of tiles (color normalized or not). Multiple cohorts can be used, all tiles do not need to be in the same folder. Resizing, if needed, can be done automatically during the training. ZIP files containing tiles for each patient (STAMP's output) are also accepted and do not need to be extracted beforehand. Accepted image formats: JPEG, TIFF and PNG.
+3. **Preprocess the Data**: If the dataset consists of WSIs and not tiles, use the [STAMP protocol](https://github.com/KatherLab/STAMP) for preprocessing WSIs as needed. The starting point for MoPaDi is folders of tiles (color normalized or not). Multiple cohorts can be used, all tiles do not need to be in the same folder. Resizing, if needed, can be done automatically during the training.  Accepted image formats: JPEG, TIFF and PNG.
 
-4. **Configure Training**: Modify the [`conf.yaml`](https://github.com/KatherLab/mopadi/blob/main/conf.yaml) file to match your dataset, define output paths and desired training parameters.
+> [!TIP] ZIP files containing tiles for each patient ([STAMP's](https://github.com/KatherLab/STAMP) output) are also accepted and do not need to be extracted beforehand.
+
+4. **Configure Training**: Modify [`conf.yaml`](https://github.com/KatherLab/mopadi/blob/main/conf.yaml) file to match your dataset, define output path and desired training parameters.
 
 5. **Run Training**: Execute the training scripts for the desired models:
   ```
   python run_mopadi.py --config conf.yaml
   ```
 You can train the following models by varying `train_type` in the configuration:
- - **Diffusion autoencoder**: the core component of MoPaDi, encodes and decodes the images.
+ - **Diffusion autoencoder**: the core component of MoPaDi, encodes and decodes the images. Training this model is the longest step in the pipeline. Depending on the data and hardware, training time may vary between a couple of days to a few weeks.
  - **Latent DPM** (optional, not required for counterfactuals generation): for unconditional synthetic image generation. Enables sampling feature vectors from the latent space of semantic encoder, which are then decoded to synthetic histopathology tiles. 
  - **Linear classifier**: the simplest classifier for linearly separable classes, based on the original [DiffAE](https://github.com/phizaz/diffae) method. Ground truth labels are needed for each tile. Enables counterfactual image generation.
  - **MIL classifier**: more complex approach to guide counterfactual image generation, when a label is given on a patient level and not for each tile, introduced in our [preprint](https://www.biorxiv.org/content/10.1101/2024.10.29.620913v1).
 
-7. **Evaluate the Autoencoder**: adapt `utils.reconstruct_1k_images.py` for your data to reconstruct 1000 images from the test set and compute corresponding metrics: SSIM, MS-SSIM, MSE.
+6. **Evaluate the Autoencoder**: adapt `utils/reconstruct_1k_images.py` for your data to reconstruct 1000 images from the test set and compute corresponding metrics: SSIM, MS-SSIM, MSE.
 
-8. **Generate Counterfactuals**
+7. **Generate Counterfactuals** (TBA)
 
 ## Pretrained Models
 
