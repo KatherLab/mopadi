@@ -16,7 +16,7 @@ from model import *
 from model.nn import mean_flat
 from typing import NamedTuple, Tuple
 from configs.choices import *
-from torch.cuda.amp import autocast
+from torch.amp import autocast
 import torch.nn.functional as F
 
 from dataclasses import dataclass
@@ -127,8 +127,8 @@ class GaussianDiffusionBeatGans:
         if self.loss_type in [
                 LossType.mse,
                 LossType.l1,
-        ]:
-            with autocast(self.conf.fp16):
+        ]:          
+            with autocast(device_type='cuda', enabled=self.conf.fp16):
                 # x_t is static wrt. to the diffusion process
                 model_forward = model.forward(x=x_t.detach(),
                                               t=self._scale_timesteps(t),
@@ -303,7 +303,7 @@ class GaussianDiffusionBeatGans:
 
         B, C = x.shape[:2]
         assert t.shape == (B, )
-        with autocast(self.conf.fp16):
+        with autocast(device_type='cuda', enabled=self.conf.fp16):
             model_forward = model.forward(x=x,
                                           t=self._scale_timesteps(t),
                                           **model_kwargs)

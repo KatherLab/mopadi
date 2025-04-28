@@ -12,11 +12,11 @@ import numpy as np
 import pandas as pd
 import pytorch_lightning as pl
 import torch
-from numpy.lib.function_base import flip
+#from numpy.lib.function_base import flip
 from pytorch_lightning import loggers as pl_loggers
 from pytorch_lightning.callbacks import *
 from torch import nn
-from torch.cuda import amp
+from torch import amp
 from torch.distributions import Categorical
 from torch.optim.optimizer import Optimizer
 from torch.utils.data.dataset import ConcatDataset, TensorDataset
@@ -166,7 +166,7 @@ class LitModel(pl.LightningModule):
         return out['sample']
 
     def forward(self, noise=None, x_start=None, ema_model: bool = False):
-        with amp.autocast(False):
+        with autocast('cuda', enabled=False):
             if ema_model:
                 model = self.ema_model
             else:
@@ -351,7 +351,7 @@ class LitModel(pl.LightningModule):
         given an input, calculate the loss function
         no optimization at this stage.
         """
-        with amp.autocast(False):
+        with amp.autocast(device_type='cuda', enabled=False):
             # batch size here is local!
             # forward
             if self.conf.train_mode.require_dataset_infer():

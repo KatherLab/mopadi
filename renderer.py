@@ -3,7 +3,7 @@
 # License: MIT
 
 from configs.config import *
-from torch.cuda import amp
+from torch import amp
 
 
 def render_uncondition(conf: TrainConfig,
