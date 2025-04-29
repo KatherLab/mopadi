@@ -2,7 +2,8 @@
 
 MoPaDi combines [Diffusion Autoencoders](https://openaccess.thecvf.com/content/CVPR2022/html/Preechakul_Diffusion_Autoencoders_Toward_a_Meaningful_and_Decodable_Representation_CVPR_2022_paper.html) with multiple instance learning (MIL) for explainability of deep learning classifiers in histopathology. 
 
-> [!IMPORTANT] This repository contains an updated version of the codebase. For the experiments described in the [preprint](https://www.biorxiv.org/content/10.1101/2024.10.29.620913v1), please refer to [version 0.0.1 of MoPaDi](https://github.com/KatherLab/mopadi/tree/v0.0.1).
+> [!IMPORTANT] 
+> This repository contains an updated version of the codebase. For the experiments described in the [preprint](https://www.biorxiv.org/content/10.1101/2024.10.29.620913v1), please refer to [version 0.0.1 of MoPaDi](https://github.com/KatherLab/mopadi/tree/v0.0.1).
 
 For segmentation of 6 cell types to quantify changes in original and counterfactual images, [DeepCMorph](https://github.com/aiff22/DeepCMorph) pretrained models were used.
 
@@ -53,7 +54,8 @@ To train the models from scratch, follow these steps:
 
 3. **Preprocess the Data**: If the dataset consists of WSIs and not tiles, use the [STAMP protocol](https://github.com/KatherLab/STAMP) for preprocessing WSIs as needed. The starting point for MoPaDi is folders of tiles (color normalized or not). Multiple cohorts can be used, all tiles do not need to be in the same folder. Resizing, if needed, can be done automatically during the training.  Accepted image formats: JPEG, TIFF and PNG.
 
-> [!TIP] ZIP files containing tiles for each patient ([STAMP's](https://github.com/KatherLab/STAMP) output) are also accepted and do not need to be extracted beforehand.
+> [!TIP] 
+> ZIP files containing tiles for each patient ([STAMP's](https://github.com/KatherLab/STAMP) output) are also accepted and do not need to be extracted beforehand.
 
 4. **Configure Training**: Modify [`conf.yaml`](https://github.com/KatherLab/mopadi/blob/main/conf.yaml) file to match your dataset, define output path and desired training parameters.
 
