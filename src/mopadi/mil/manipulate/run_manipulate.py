@@ -103,8 +103,8 @@ def run_manipulate(config):
     else:
         autoenc_model_path = os.path.join(conf.base_dir, 'autoenc', 'last.ckpt')
         clf_model_path = os.path.join(conf.out_dir, 'full_model', 'PMA_mil.pth')
-        print(f"Autoencoder path: {}")
-        print(f"Classifier path: {}")
+        print(f"Autoencoder path: {autoenc_model_path}")
+        print(f"Classifier path: {clf_model_path}")
 
     manipulator = ImageManipulator(autoenc_config=default_autoenc(config),
                                    autoenc_path=autoenc_model_path, 
@@ -119,7 +119,7 @@ def run_manipulate(config):
     else:
         print("Clini table could not be read")
 
-    feat_files = [f for f in os.listdir(conf.feat_path) if not f.startswith(".")]
+    feat_files = [f for f in os.listdir(conf.feat_path_test) if not f.startswith(".")]
 
     for patient_fname in tqdm(feat_files):
         res = {}

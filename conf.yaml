@@ -110,7 +110,7 @@ linear_classifier:
 # STEP 3 (OPTION 2): MIL CLASSIFIER (needed for the manipulation of images)
 mil_classifier:
     # Path to extracted feature files (h5 format) for training
-    feat_path: /path/to/extracted/features/of/train/set
+    feat_path_train: /path/to/extracted/features/of/train/set
     # Path to extracted feature files (h5 format) for testing
     feat_path_test: /path/to/extracted/features/of/test/set
     # Clinical table with ground truth data, must contain PATIENT column
@@ -129,9 +129,10 @@ mil_classifier:
 
     # The rest of parameters are needed only for the manipulation (creation of counterfactuals)
 
-    # Directory to the test tiles folder; must match features in feat_path_test; 
+    # Directory to the test tiles folder; must match features in feat_path_test
     # alternatively, one can use the same folder as for training (data_dirs), but with the split set to 'test' & test_patients_file_path specified
     #images_dir: /path/to/test/tiles/folder
+    # Make sure features extracted from images in images_dir are in feat_path_test folder
 
     # If the following (patients/filename) are not specified, all the images in the directory will be manipulated
     #patients: 

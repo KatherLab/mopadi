@@ -27,7 +27,7 @@ def default_mil_conf(config):
     conf.target_dict = mil_config.get('target_dict', None)
     conf.nr_folds = mil_config.get('number_of_folds', 5)
     conf.fname_index = mil_config.get('fname_index', 3)
-    conf.feat_path = mil_config.get('feat_path', None)
+    conf.feat_path = mil_config.get('feat_path_train', None)
     conf.feat_path_test = mil_config.get('feat_path_test', None)
     conf.clini_table = mil_config.get('clini_table', None)
     conf.out_dir = os.path.join(conf.base_dir, 'mil_classifier_' + conf.target_label)
