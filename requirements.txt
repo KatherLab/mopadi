@@ -12,7 +12,11 @@ scipy==1.15.2
 tqdm==4.67.1
 tensorboard==2.19.0
 scikit-learn==1.6.1
+scikit-image==0.25.2
 cmcrameri==1.9
 python-dotenv==1.1.0
 lpips==0.1.4
 lmdb==1.6.2
+opencv-python==4.11.0.86
+-e .
+git+https://github.com/lazigu/wanshi-utils.git@dev_laura
