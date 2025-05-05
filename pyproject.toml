@@ -3,10 +3,10 @@ name = "mopadi"
 version = "0.1.0"
 description = "Counterfactual explanations of histopathology DL models"
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 authors = [
-    {name = "Laura Zigutyte", email = "laura.zigutyte@tu-dresden.de"}
-    {name = "Tim Lenz", email = "tim.lenz@tu-dresden.de"},
+    { name = "Laura Zigutyte", email = "laura.zigutyte@tu-dresden.de" },
+    { name = "Tim Lenz", email = "tim.lenz@tu-dresden.de" }
 ]
 requires-python = ">=3.11"
 dependencies = [
@@ -29,3 +29,10 @@ dependencies = [
     "torchvision==0.22.0",
     "tqdm==4.67.1",
 ]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["mopadi"]
+
+[project.scripts]
+mopadi = "mopadi.run_mopadi:main"
