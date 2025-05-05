@@ -38,6 +38,10 @@ def default_mil_conf(config):
     conf.filename = mil_config.get('filename', None)
     conf.nr_top_tiles = mil_config.get('nr_top_tiles', 5)
 
+    conf.use_pretrained = mil_config.get('use_pretrained', False)
+    conf.pretrained_autoenc_name = mil_config.get('pretrained_autoenc_name', None)
+    conf.pancancer_type = mil_config.get('pancancer_type', None)
+
     return conf
 
 def default_linear_clf(config):

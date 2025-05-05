@@ -93,6 +93,21 @@ Pretrained models can be found on [Hugging Face](https://huggingface.co/KatherLa
   <li><b>Pancancer </b>autoencoding diffusion model (trained on 256 x 256 px tiles (varying MPP) from histology images from uniform tumor regions in TCGA WSI <a href="https://zenodo.org/records/5889558">(Komura & Ishikawa, 2021)</a>) + liver cancer types (hepatocellular carcinoma [HCC] vs. cholangiocarcinoma [CCA]) MIL & linear classifiers and lung cancer types (lung adenocarcinoma [LUAD] vs. lung squamous cell carcinoma [LUSC]) MIL & linear classifiers.</li>
 </ol>
 
+If you want to process multiple images/folders, you can use [`conf.yaml`](https://github.com/KatherLab/mopadi/blob/main/conf.yaml), with `use_pretrained` parameter set to `True`, which will trigger automatic download of the selected model, and the following command.
+```
+mopadi mil --config conf.yaml --mode manipulate
+```
+
+For this to work, make sure you are logged in to your Hugging Face account:
+```
+huggingface-cli login
+```
+
+You can check if you are already logged in by running:
+```
+huggingface-cli whoami
+```
+
 Examples of counterfactual images generated with corresponding models (please refer to the [preprint](https://www.biorxiv.org/content/10.1101/2024.10.29.620913v1) for more examples):
 ![image info](./images/models.png)
 
