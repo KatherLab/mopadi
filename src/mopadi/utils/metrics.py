@@ -14,12 +14,12 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm, trange
 
-from utils.renderer import *
-from configs.config import *
-from diffusion import Sampler
-from utils.dist_utils import *
+from mopadi.utils.renderer import *
+from mopadi.configs.config import *
+from mopadi.diffusion import Sampler
+from mopadi.utils.dist_utils import *
 import lpips
-from utils.ssim import ssim
+from mopadi.utils.ssim import ssim
 
 
 def make_subset_loader(conf: TrainConfig,

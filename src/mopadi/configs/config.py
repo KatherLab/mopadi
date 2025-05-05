@@ -3,20 +3,20 @@
 # Original Source: https://github.com/phizaz/diffae
 # License: MIT
 
-from model.unet import ScaleAt
-from model.latentnet import *
-from diffusion.resample import UniformSampler
-from diffusion.diffusion import space_timesteps
+from mopadi.model.unet import ScaleAt
+from mopadi.model.latentnet import *
+from mopadi.diffusion.resample import UniformSampler
+from mopadi.diffusion.diffusion import space_timesteps
 from typing import Tuple
 
 from torch.utils.data import DataLoader
 
-from configs.config_base import BaseConfig
-from dataset import *
-from diffusion import *
-from diffusion.base import GenerativeType, LossType, ModelMeanType, ModelVarType, get_named_beta_schedule
-from model import *
-from configs.choices import *
+from mopadi.configs.config_base import BaseConfig
+from mopadi.dataset import *
+from mopadi.diffusion import *
+from mopadi.diffusion.base import GenerativeType, LossType, ModelMeanType, ModelVarType, get_named_beta_schedule
+from mopadi.model import *
+from mopadi.configs.choices import *
 from multiprocessing import get_context
 import os
 import shutil

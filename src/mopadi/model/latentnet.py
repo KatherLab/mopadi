@@ -4,8 +4,8 @@ from enum import Enum
 from typing import NamedTuple, Tuple
 
 import torch
-from configs.choices import *
-from configs.config_base import BaseConfig
+from mopadi.configs.choices import *
+from mopadi.configs.config_base import BaseConfig
 from torch import nn
 from torch.nn import init
 

@@ -3,11 +3,15 @@ import yaml
 import torch
 import os
 
-from train_diff_autoenc import train
-from linear_clf.train_linear_cls import train_cls
-from configs.templates import default_autoenc
-from configs.templates_latent import default_latent
-from configs.templates_cls import default_linear_clf
+from mopadi.train_diff_autoenc import train
+from mopadi.linear_clf.train_linear_cls import train_cls
+
+from mopadi.configs.templates import default_autoenc
+from mopadi.configs.templates_latent import default_latent
+from mopadi.configs.templates_cls import default_linear_clf, default_mil_conf
+
+from mopadi.mil.crossval.classifier_train import run_crossval
+from mopadi.mil.train.run_train_clf import run_train
 
 def validate_gpus(gpus):
 
@@ -27,9 +31,23 @@ def validate_gpus(gpus):
             )
     print('-----------------------------------')
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Run mopadi with YAML config')
-    parser.add_argument('--config', type=str, required=True, help='Path to YAML config file')
+def main():
+    parser = argparse.ArgumentParser(description='Train MoPaDi models or perform counterfactuals generation')
+    subparsers = parser.add_subparsers(dest='command')
+
+    autoenc_parser = subparsers.add_parser('autoenc', help='Train autoencoder')
+    autoenc_parser.add_argument('-c', '--config', required=True, help='Path to config YAML')
+
+    latent_parser = subparsers.add_parser('latent', help='Train latent DPM')
+    latent_parser.add_argument('-c', '--config', required=True, help='Path to config YAML')
+
+    linear_parser = subparsers.add_parser('linear_classifier', help='Train linear classifier')
+    linear_parser.add_argument('-c', '--config', required=True, help='Path to config YAML')
+
+    mil_parser = subparsers.add_parser('mil', help='Train MIL classifier')
+    mil_parser.add_argument('-c', '--config', required=True, help='Path to config YAML')
+
+    mil_parser.add_argument('--mode', choices=['train', 'crossval', 'manipulate'], default='train', help='Mode for MIL training')
     args = parser.parse_args()
 
     with open(args.config, 'r') as f:
@@ -51,15 +69,13 @@ if __name__ == '__main__':
             raise ValueError("gpus in config must be an int or list of ints.")
         validate_gpus(gpus)
 
-    train_config = config.get('train', {})
-
-    if train_config.get('train_type') == 'autoenc':
+    if args.command == 'autoenc':
         # train the autoenc model
         # NOTE: this requires 8 (40Gb) or 4 (80Gb) x A100
         autoenc_conf = default_autoenc(config)
         train(autoenc_conf, gpus=gpus)
 
-    elif train_config.get('train_type') == 'latent_dpm':
+    elif args.command == 'latent':
         # infer the features for training the latent DPM
         # NOTE: not gpu heavy, but more gpus can be of use!
         autoenc_conf = default_autoenc(config)
@@ -74,7 +90,7 @@ if __name__ == '__main__':
         latent_dpm_conf = default_latent(config)
         train(latent_dpm_conf, gpus=gpus)
 
-    elif train_config.get('train_type') == 'linear_cls':
+    elif args.command == 'linear_classifier':
         autoenc_conf = default_autoenc(config)
         latent_infer_path = os.path.join(autoenc_conf.base_dir, 'latent.pkl')
         if not os.path.exists(latent_infer_path):
@@ -87,5 +103,17 @@ if __name__ == '__main__':
         linear_clf_conf = default_linear_clf(config)
         train_cls(linear_clf_conf, gpus=[gpus[0]])  # use only one GPU because something doesn't work with distributed training
 
+    elif args.command == 'mil':
+        mode = args.mode
+        mil_conf = default_mil_conf(config)
+        if mode == 'crossval':
+            run_crossval(mil_conf)
+        if mode == 'train':
+            run_train(mil_conf)
+
     else:
-        raise ValueError("Invalid train_type specified in config")
+        parser.print_help()
+
+
+if __name__ == "__main__":
+    main()

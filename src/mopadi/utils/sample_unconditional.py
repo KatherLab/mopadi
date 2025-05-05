@@ -1,5 +1,5 @@
-from configs.templates import *
-from configs.templates_latent import *
+from mopadi.configs.templates import *
+from mopadi.configs.templates_latent import *
 from tqdm import tqdm
 from dotenv import load_dotenv
 from torch.multiprocessing import Pool, set_start_method

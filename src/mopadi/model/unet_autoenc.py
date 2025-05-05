@@ -6,7 +6,7 @@ from torch.nn.functional import silu
 
 from .latentnet import *
 from .unet import *
-from configs.choices import *
+from mopadi.configs.choices import *
 
 
 @dataclass

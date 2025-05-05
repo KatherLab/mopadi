@@ -22,12 +22,12 @@ from torch.optim.optimizer import Optimizer
 from torch.utils.data.dataset import ConcatDataset, TensorDataset
 from torchvision.utils import make_grid, save_image
 
-from configs.config import *
-from dataset import *
-from dist_utils import *
-from metrics import *
-from renderer import *
-from utils.misc import *
+from mopadi.configs.config import *
+from mopadi.dataset import *
+from mopadi.utils.dist_utils import *
+from mopadi.utils.metrics import *
+from mopadi.utils.renderer import *
+from mopadi.utils.misc import *
 
 torch.set_float32_matmul_precision('medium')
 

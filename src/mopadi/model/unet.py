@@ -7,8 +7,8 @@ import numpy as np
 import torch as th
 from torch import nn
 import torch.nn.functional as F
-from configs.choices import *
-from configs.config_base import BaseConfig
+from mopadi.configs.choices import *
+from mopadi.configs.config_base import BaseConfig
 from .blocks import *
 
 from .nn import (conv_nd, linear, normalization, timestep_embedding,

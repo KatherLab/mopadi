@@ -5,8 +5,8 @@ from numbers import Number
 
 import torch as th
 import torch.nn.functional as F
-from configs.choices import *
-from configs.config_base import BaseConfig
+from mopadi.configs.choices import *
+from mopadi.configs.config_base import BaseConfig
 from torch import nn
 
 from .nn import (avg_pool_nd, conv_nd, linear, normalization,

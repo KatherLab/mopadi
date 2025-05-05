@@ -3,8 +3,8 @@
 # Original Source: https://github.com/phizaz/diffae
 # License: MIT
 
-from configs.config import *
-from dataset import *
+from mopadi.configs.config import *
+from mopadi.dataset import *
 import os
 import copy
 

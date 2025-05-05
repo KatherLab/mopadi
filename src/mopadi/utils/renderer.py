@@ -2,7 +2,7 @@
 # Original Source: https://github.com/phizaz/diffae
 # License: MIT
 
-from configs.config import *
+from mopadi.configs.config import *
 from torch import amp
 
 

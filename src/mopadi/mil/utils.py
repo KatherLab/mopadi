@@ -1,37 +1,43 @@
-from mil.set_transformer import PMA,SAB
 import h5py
 import numpy as np
 import pandas as pd
+import pickle
+import math
+import sys
+import os
+from tqdm import tqdm
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 import torch.optim as optim
 from torchvision import transforms
-from tqdm import tqdm
-import matplotlib.pyplot as plt
+
 from sklearn.metrics import precision_recall_curve, roc_curve
 from sklearn.metrics import roc_auc_score
-import pickle
-import math
-import sys
-import os
-from cmcrameri import cm
-import matplotlib.font_manager as font_manager
-sys.path.insert(0, "../")
-from train_diff_autoenc import LitModel
-from dotenv import load_dotenv
 
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as font_manager
+from cmcrameri import cm
+
+from mopadi.train_diff_autoenc import LitModel
+from mopadi.mil.set_transformer import PMA, SAB
+
+from dotenv import load_dotenv
 load_dotenv()
 ws_path = os.getenv("WORKSPACE_PATH")
 
 font_dir = f'{ws_path}/wanshi-utils/HelveticaNeue.ttf'
 my_font = font_manager.FontProperties(fname=font_dir)
 
-def extract_patient_id(filename, index=3):
+def extract_patient_id(filename, index=None):
     filename = filename.rsplit('.', 1)[0]
     parts = filename.split('-')
-    return "-".join(parts[:index])
+    if index:
+        return "-".join(parts[:index])
+    else:
+        filename
 
 class Classifier(nn.Module):
     def __init__(self, dim, num_heads, num_seeds, num_classes, ln=False):
