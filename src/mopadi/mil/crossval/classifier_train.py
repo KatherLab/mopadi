@@ -24,11 +24,8 @@ def run_crossval(conf):
     if not os.path.exists(out_dir):
         Path(out_dir).mkdir(parents=True, exist_ok=True)
 
-    with open(os.path.join(conf.out_dir, "parameters.json"), 'w') as config_file:
+    with open(os.path.join(out_dir, "parameters.json"), 'w') as config_file:
         json.dump(conf_dict, config_file, indent=4)
-
-    if not os.path.exists(conf.out_dir):
-        Path(conf.out_dir).mkdir(parents=True, exist_ok=True)
 
     if conf.clini_table.endswith(".tsv"):
         clini_df = pd.read_csv(conf.clini_table,sep="\t")
@@ -81,7 +78,7 @@ def run_crossval(conf):
     full_dataset = FeatDataset(feat_list=all_train_files+test_files, annot_file=conf.clini_table, target_label=conf.target_label, target_dict=conf.target_dict, fname_index=conf.fname_index)
 
     for fold, (train_index, val_index) in enumerate(group_kf.split(X=all_train_files, groups=groups)):
-        out_fold_dir = os.path.join(conf.out_dir, f"fold_{fold}")
+        out_fold_dir = os.path.join(out_dir, f"fold_{fold}")
 
         model_path = os.path.join(out_fold_dir, "PMA_mil.pth")
 
@@ -131,7 +128,7 @@ def run_crossval(conf):
 
         test(model, loader_dict, conf.target_label, out_fold_dir, positive_weights)
 
-    csv_files = [f"{conf.out_dir}/fold_{fold}/PMA_mil_preds_test.csv" for fold in range(conf.nr_folds)]
+    csv_files = [f"{out_dir}/fold_{fold}/PMA_mil_preds_test.csv" for fold in range(conf.nr_folds)]
 
     y_trues = []
     y_scores = []
@@ -161,6 +158,6 @@ def run_crossval(conf):
     ax.tick_params(axis='both', which='minor', labelsize=18)
 
     plt.tight_layout()
-    fig.savefig(os.path.join(conf.out_dir, "roc.png"), dpi=300)
-    fig.savefig(os.path.join(conf.out_dir, "roc.svg"))
+    fig.savefig(os.path.join(out_dir, "roc.png"), dpi=300)
+    fig.savefig(os.path.join(out_dir, "roc.svg"))
     plt.show()
