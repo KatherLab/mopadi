@@ -59,19 +59,28 @@ To train the models from scratch, follow these steps:
 
 4. **Configure Training**: Modify [`conf.yaml`](https://github.com/KatherLab/mopadi/blob/main/conf.yaml) file to match your dataset, define output path and desired training parameters.
 
-5. **Run Training**: Execute the training scripts for the desired models:
-  ```
-  python run_mopadi.py --config conf.yaml
-  ```
-You can train the following models by varying `train_type` in the configuration:
+5. **Run Trainings**: Execute the training scripts for the desired models.
+
  - **Diffusion autoencoder**: the core component of MoPaDi, encodes and decodes the images. Training this model is the longest step in the pipeline. Depending on the data and hardware, training time may vary between a couple of days to a few weeks.
- - **Latent DPM** (optional, not required for counterfactuals generation): for unconditional synthetic image generation. Enables sampling feature vectors from the latent space of semantic encoder, which are then decoded to synthetic histopathology tiles. 
+   ```
+   mopadi autoenc --config conf.yaml
+   ```
+You can **evaluate the trained autoencoder** by adapting `src/mopadi/utils/reconstruct_1k_images.py` for your data to reconstruct images from the test set and compute corresponding metrics: SSIM, MS-SSIM, MSE.
+
+ - **Latent DPM** (optional, not required for counterfactuals generation): for unconditional synthetic image generation. Enables sampling feature vectors from the latent space of semantic encoder, which are then decoded to synthetic histopathology tiles.
+   ```
+   mopadi latent --config conf.yaml
+   ```
  - **Linear classifier**: the simplest classifier for linearly separable classes, based on the original [DiffAE](https://github.com/phizaz/diffae) method. Ground truth labels are needed for each tile. Enables counterfactual image generation.
+   ```
+   mopadi linear_classifier --config conf.yaml
+   ```
  - **MIL classifier**: more complex approach to guide counterfactual image generation, when a label is given on a patient level and not for each tile, introduced in our [preprint](https://www.biorxiv.org/content/10.1101/2024.10.29.620913v1).
-
-6. **Evaluate the Autoencoder**: adapt `utils/reconstruct_1k_images.py` for your data to reconstruct 1000 images from the test set and compute corresponding metrics: SSIM, MS-SSIM, MSE.
-
-7. **Generate Counterfactuals** (TBA)
+   ```
+   mopadi mil --config conf.yaml --mode crossval
+   mopadi mil --config conf.yaml --mode train
+   mopadi mil --config conf.yaml --mode manipulate
+   ```
 
 ## Pretrained Models
 
