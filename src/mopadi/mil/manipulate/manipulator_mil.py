@@ -1,11 +1,12 @@
 import torch
 from torchvision import transforms
-from configs.templates import *
-from configs.templates_cls import *
-from mil.utils import *
 from torchmetrics.image import MultiScaleStructuralSimilarityIndexMeasure
 from skimage.metrics import structural_similarity, mean_squared_error
 import cv2
+
+from mopadi.configs.templates import *
+from mopadi.configs.templates_cls import *
+from mopadi.mil.utils import *
 
 
 class ImageManipulator:

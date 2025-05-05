@@ -1,4 +1,3 @@
-import argparse
 import yaml
 import torch
 import os
@@ -8,10 +7,12 @@ from mopadi.linear_clf.train_linear_cls import train_cls
 
 from mopadi.configs.templates import default_autoenc
 from mopadi.configs.templates_latent import default_latent
-from mopadi.configs.templates_cls import default_linear_clf, default_mil_conf
+from mopadi.configs.templates_cls import *
 
-from mopadi.mil.crossval.classifier_train import run_crossval
-from mopadi.mil.train.run_train_clf import run_train
+from mopadi.mil.crossval.classifier_train import *
+from mopadi.mil.train.classifier_train import *
+from mopadi.mil.manipulate.run_manipulate import *
+
 
 def validate_gpus(gpus):
 
@@ -110,6 +111,8 @@ def main():
             run_crossval(mil_conf)
         if mode == 'train':
             run_train(mil_conf)
+        if mode == 'manipulate':
+            run_manipulate(config)
 
     else:
         parser.print_help()
