@@ -42,6 +42,16 @@ def default_mil_conf(config):
     conf.pretrained_autoenc_name = mil_config.get('pretrained_autoenc_name', None)
     conf.pancancer_type = mil_config.get('pancancer_type', None)
 
+    if conf.use_pretrained:
+        if conf.pretrained_autoenc_name == "crc_512_model":
+            conf.pretrained_autoenc_conf = tcga_crc_autoenc()
+        elif conf.pretrained_autoenc_name == "brca_512_model":
+            conf.pretrained_autoenc_conf = tcga_brca_autoenc()
+        elif conf.pretrained_autoenc_name == "pancancer_model":
+            conf.pretrained_autoenc_conf = pancancer_autoenc()
+        else:
+            conf.pretrained_autoenc_conf = None
+
     return conf
 
 def default_linear_clf(config):

@@ -61,12 +61,22 @@ def autoenc_base():
     conf.make_model_conf()
     return conf
 
+
 def default_autoenc(config):
     conf = autoenc_base()
     conf.base_dir = config.get('base_dir', './checkpoints/no_name')
 
     data_config = config.get('data', {})
     autoenc_config = config.get('autoenc_model', {})
+
+    if config.pretrained_autoenc_name == "crc_512_model":
+        return CRC512AutoencConfig()
+    elif config.pretrained_autoenc_name == "brca_512_model":
+        return BRCA512AutoencConfig()
+    elif config.pretrained_autoenc_name == "pancancer_model":
+        return PanCancerAutoencConfig()
+    else:
+        raise ValueError(f"Unknown model config for {config.pretrained_autoenc_name}")
 
     conf.data_dirs = list(data_config.get('data_dirs', None))
     conf.test_patients_file_path = data_config.get('test_patients_file_path', None)
@@ -93,5 +103,82 @@ def default_autoenc(config):
     conf.eval_ema_every_samples = autoenc_config.get('eval_ema_every_samples', 1_000_000)
     
     conf.name = 'autoenc'
+    conf.make_model_conf()
+    return conf
+
+
+def texture100k_autoenc():
+    conf = autoenc_base()
+    conf.data_name = 'texture'
+    conf.base_dir = 'checkpoints/texture100k'
+    conf.warmup = 0
+    conf.total_samples = 200_000_000
+    conf.img_size = 224
+    conf.batch_size = 64
+    conf.batch_size_eval = 64
+    conf.net_ch = 128
+    conf.net_ch_mult = (1, 1, 2, 2, 4, 4)
+    conf.net_enc_channel_mult = (1, 1, 2, 2, 4, 4, 4)
+    conf.eval_every_samples = 1_000_000
+    conf.eval_ema_every_samples = 1_000_000
+    # conf.scale_up_gpus(4)
+    conf.make_model_conf()
+    return conf
+
+
+def tcga_crc_autoenc():
+    conf = autoenc_base()
+    conf.data_name = 'tcga_crc_512'
+    conf.base_dir = 'checkpoints/crc/tcga_crc_512'
+    conf.warmup = 0
+    conf.total_samples = 70_000_000
+    conf.sample_size = 16
+    conf.img_size = 512
+    conf.batch_size = 24
+    conf.batch_size_eval = 24
+    conf.net_ch = 128
+    conf.net_ch_mult = (1, 1, 2, 2, 4, 4)
+    conf.net_enc_channel_mult = (1, 1, 2, 2, 4, 4, 4)
+    conf.eval_every_samples = 1_000_000
+    conf.eval_ema_every_samples = 1_000_000
+    # conf.scale_up_gpus(2)
+    conf.make_model_conf()
+    return conf
+
+
+def tcga_brca_autoenc():
+    conf = autoenc_base()
+    conf.data_name = 'tcga_brca_512'
+    conf.base_dir = 'checkpoints/brca/autoenc'
+    conf.warmup = 0
+    conf.total_samples = 70_000_000
+    conf.sample_size = 16
+    conf.img_size = 512
+    conf.batch_size = 16
+    conf.batch_size_eval = 16
+    conf.net_ch = 128
+    conf.net_ch_mult = (1, 1, 2, 2, 4, 4)
+    conf.net_enc_channel_mult = (1, 1, 2, 2, 4, 4, 4)
+    conf.eval_every_samples = 1_000_000
+    conf.eval_ema_every_samples = 1_000_000
+    # conf.scale_up_gpus(2)
+    conf.make_model_conf()
+    return conf
+
+
+def pancancer_autoenc():
+    conf = autoenc_base()
+    conf.data_name = 'pancancer'
+    conf.base_dir = f'{ws_path}/mopadi/checkpoints/pancancer/autoenc'
+    conf.warmup = 0
+    conf.total_samples = 200_000_000
+    conf.img_size = 256
+    conf.batch_size = 48  # had to reduce due to one broken gpu on dgx
+    conf.batch_size_eval = 48  # had to reduce due to one broken gpu on dgx
+    conf.net_ch = 128
+    conf.net_ch_mult = (1, 1, 2, 2, 4, 4)
+    conf.net_enc_channel_mult = (1, 1, 2, 2, 4, 4, 4)
+    conf.eval_every_samples = 1_000_000
+    conf.eval_ema_every_samples = 1_000_000
     conf.make_model_conf()
     return conf

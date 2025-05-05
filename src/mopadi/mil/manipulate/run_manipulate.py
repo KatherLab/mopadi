@@ -106,7 +106,12 @@ def run_manipulate(config):
         print(f"Autoencoder path: {autoenc_model_path}")
         print(f"Classifier path: {clf_model_path}")
 
-    manipulator = ImageManipulator(autoenc_config=default_autoenc(config),
+    if conf.pretrained_autoenc_conf is not None:
+        autoenc_conf = conf.pretrained_autoenc_conf
+    else:
+        autoenc_conf = default_autoenc(config)
+
+    manipulator = ImageManipulator(autoenc_config=autoenc_conf,
                                    autoenc_path=autoenc_model_path, 
                                    mil_path=clf_model_path,
                                    dataset=data,
@@ -140,13 +145,13 @@ def run_manipulate(config):
             print(f"Patient {patient_id} not found in the clini table, skipping.")
             continue
 
-        with h5py.File(os.path.join(conf.feat_path, patient_fname), "r") as hdf_file:
+        with h5py.File(os.path.join(conf.feat_path_test, patient_fname), "r") as hdf_file:
             if 'feats' in hdf_file:
                 features = torch.from_numpy(hdf_file['feats'][:])
             elif 'features' in hdf_file:
                 features = torch.from_numpy(hdf_file['features'][:])
             else:
-                raise ValueError(f"Neither 'feats' nor 'features' found in {feat_path}")
+                raise ValueError(f"Neither 'feats' nor 'features' found in {feat_path_test}")
 
             if 'metadata' in hdf_file:
                 metadata = hdf_file["metadata"][:]
