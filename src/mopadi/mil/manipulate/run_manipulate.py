@@ -58,7 +58,7 @@ def run_manipulate(config):
         raise ValueError("No correct directory provided. Please provide a valid images directory.")
 
     if conf.use_pretrained:
-        assert conf.pretrained_name is not None, "Pretrained name must be provided if use_pretrained is True"
+        assert conf.pretrained_autoenc_name is not None, "Pretrained name must be provided if use_pretrained is True"
         from huggingface_hub import hf_hub_download, login
 
         if conf.pretrained_autoenc_name == 'crc_512_model':
