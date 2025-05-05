@@ -210,8 +210,12 @@ def get_tile_paths(root_dirs, test_patients_file, split, max_tiles_per_patient, 
                     tile_files = get_tiles_from_zip(patient_path)
                     tile_files = [f"{patient_path}:{name}" for name in tile_files]
                 elif patient_entry.is_dir():
-                    exts = ("*.jpg", "*.jpeg", "*.png", "*.tif", "*.tiff")
-                    tile_files = [file for ext in exts for file in glob.glob(os.path.join(patient_path, ext))]
+                    if os.path.exists(os.path.join(patient_path, "tiles")):
+                        exts = ("*.jpg", "*.jpeg", "*.png", "*.tif", "*.tiff")
+                        tile_files = [file for ext in exts for file in glob.glob(os.path.join(patient_path, 'tiles', ext))]
+                    else:
+                        exts = ("*.jpg", "*.jpeg", "*.png", "*.tif", "*.tiff")
+                        tile_files = [file for ext in exts for file in glob.glob(os.path.join(patient_path, ext))]
                 else:
                     continue
 
@@ -323,6 +327,26 @@ class DefaultTilesDataset(TilesDataset):
             image = self.transform(image)
 
         return {"img": image, "coords": tile_coords, "filename": tile_path, "index": index}
+
+    def get_images_by_patient_and_fname(self, patient_name, fname):
+        # for simple cases, when we have patient folders/zips full of tiles
+        for tile_path in self.tile_paths:
+            if fname in tile_path:
+                print(f"Found: {tile_path}")
+                image = Image.open(tile_path)
+                if self.transform:
+                    image = self.transform(image)
+                return {'image': image, 'filename': tile_path}
+
+            # fallback: look deeper within same patient dir
+            patient_dir = os.path.dirname(tile_path)
+            for file in glob.glob(os.path.join(patient_dir, '**', '*'), recursive=True):
+                if fname in os.path.basename(file):
+                    print(f"Found: {file}")
+                    image = Image.open(file)
+                    if self.transform:
+                        image = self.transform(image)
+                    return {'image': image, 'filename': file}
 
 
 class DefaultAttrDataset(Dataset):
