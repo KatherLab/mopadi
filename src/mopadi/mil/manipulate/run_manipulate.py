@@ -100,7 +100,7 @@ def run_manipulate(config):
             elif conf.pretrained_clf_name == 'liver':
                 clf_model_path = hf_hub_download(
                     repo_id="KatherLab/MoPaDi",
-                    filename="pancancer_model/mil_liver_classifier.pth.pth",
+                    filename="pancancer_model/mil_liver_classifier.pth",
                 )
             else:
                 raise ValueError(f"Unknown pretrained classifier name: {conf.pretrained_clf_name}. Please provide a valid type (liver or lung) to use the pretrained model or train the classifier from scratch.")
