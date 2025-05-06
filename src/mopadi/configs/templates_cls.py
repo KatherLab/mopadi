@@ -85,6 +85,7 @@ def default_mil_conf(config):
     conf.pretrained_clf_name = mil_config.get('pretrained_clf_name', None)
 
     if conf.use_pretrained:
+        assert conf.pretrained_autoenc_name is not None, "Pretrained name must be provided if use_pretrained is True"
         if conf.pretrained_autoenc_name == "crc_512_model":
             conf.pretrained_autoenc_conf = tcga_crc_autoenc()
             pretrained_mil_conf = crc_pretrained_mil()
