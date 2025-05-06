@@ -91,7 +91,7 @@ class ImageManipulator:
         try:
             top_tiles = get_top_tiles(model=self.classifier, feats=patient_features, k=num_top_tiles, cls_id=target_dict[patient_class], device=self.device)
         except Exception as e:
-            print(e)
+            print(f"Exception occured while getting top tiles: {e}")
             return
 
         #print(metadata)

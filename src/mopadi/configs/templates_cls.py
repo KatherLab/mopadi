@@ -39,7 +39,7 @@ def liver_types_pretrained_mil():
     conf.nr_feats = 512
     conf.target_label = "Type"
     conf.num_epochs = 140
-    conf.target_dict = {"hcc": 0, "cca": 1}
+    conf.target_dict = {"LIHC": 0, "CHOL": 1}
     return conf
 
 
