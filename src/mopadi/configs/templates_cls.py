@@ -6,7 +6,7 @@ def lung_pretrained_mil():
     conf.nr_feats = 512
     conf.num_epochs = 50
     conf.target_label = "Type"
-    conf.target_dict = {"LUSC": 0, "LUAD": 1}
+    conf.target_dict = {"LUAD": 0, "LUSC": 1}
     return conf
 
 def crc_pretrained_mil():
