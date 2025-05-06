@@ -153,6 +153,4 @@ mil_classifier:
     # Whether to use the pretrained model (will download from Hugging Face both the autoencoder and the classifier)
     use_pretrained: false
     #pretrained_autoenc_name: CHOOSE_FROM_OPTIONS    # Options: brca_512_model, crc_512_model, pancancer_model
-
-    # If using pancancer_model, please specify the cancer type:
-    #pancancer_type: lung or liver
+    #pretrained_clf_name: CHOOSE_FROM_OPTIONS        # Options: msi (default for crc_512_model), type or e2_center (for brca_512_model), lung or liver (for pancancer_model)

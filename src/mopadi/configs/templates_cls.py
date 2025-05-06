@@ -1,6 +1,48 @@
 from mopadi.configs.templates import *
 
 
+def lung_pretrained_mil():
+    conf = MILconfig()
+    conf.nr_feats = 512
+    conf.num_epochs = 50
+    conf.target_label = "Type"
+    conf.target_dict = {"Lung_squamous_cell_carcinoma": 0, 
+                        "Lung_adenocarcinoma": 1}
+    return conf
+
+def crc_pretrained_mil():
+    conf = MILconfig()    
+    conf.nr_feats = 512
+    conf.num_epochs = 150
+    conf.target_label = "isMSIH"
+    conf.target_dict = {"nonMSIH": 0, "MSIH": 1}
+    return conf
+
+def brca_type_pretrained_mil():
+    conf = MILconfig()    
+    conf.nr_feats = 512
+    conf.num_epochs = 200
+    conf.target_label = "BRCA_Pathology"
+    conf.target_dict = {"IDC": 0, "ILC": 1}
+    return conf
+
+def brca_e2_pretrained_mil():
+    conf = MILconfig()    
+    conf.nr_feats = 512
+    conf.num_epochs = 200
+    conf.target_label = "is_E2"
+    conf.target_dict = {"No": 0, "Yes": 1}
+    return conf
+
+def liver_types_pretrained_mil():
+    conf = MILconfig()    
+    conf.nr_feats = 512
+    conf.target_label = "Type"
+    conf.num_epochs = 140
+    conf.target_dict = {"hcc": 0, "cca": 1}
+    return conf
+
+
 def default_mil_conf(config):
     conf = MILconfig()
 
@@ -40,17 +82,37 @@ def default_mil_conf(config):
 
     conf.use_pretrained = mil_config.get('use_pretrained', False)
     conf.pretrained_autoenc_name = mil_config.get('pretrained_autoenc_name', None)
-    conf.pancancer_type = mil_config.get('pancancer_type', None)
+    conf.pretrained_clf_name = mil_config.get('pretrained_clf_name', None)
 
     if conf.use_pretrained:
         if conf.pretrained_autoenc_name == "crc_512_model":
             conf.pretrained_autoenc_conf = tcga_crc_autoenc()
+            pretrained_mil_conf = crc_pretrained_mil()
         elif conf.pretrained_autoenc_name == "brca_512_model":
             conf.pretrained_autoenc_conf = tcga_brca_autoenc()
+            if conf.pretrained_clf_name == "e2_center":
+                pretrained_mil_conf = brca_e2_pretrained_mil()
+            elif conf.pretrained_clf_name == "type":
+                pretrained_mil_conf = brca_type_pretrained_mil()
         elif conf.pretrained_autoenc_name == "pancancer_model":
             conf.pretrained_autoenc_conf = pancancer_autoenc()
-        else:
-            conf.pretrained_autoenc_conf = None
+            if conf.pretrained_clf_name == "lung":
+                pretrained_mil_conf = lung_pretrained_mil()
+            elif conf.pretrained_clf_name == "liver":
+                pretrained_mil_conf = liver_types_pretrained_mil()
+        
+        if conf.target_dict is None:
+            conf.target_dict = pretrained_mil_conf.target_dict
+        if conf.target_label is None:
+            conf.target_label = pretrained_mil_conf.target_label
+
+        if pretrained_mil_conf.target_dict != conf.target_dict:
+            print(f"Target dict did not match the selected pretrained model. Changing the target dict to: {pretrained_mil_conf.target_dict}")
+            conf.target_dict = pretrained_mil_conf.target_dict
+
+        if pretrained_mil_conf.target_label != conf.target_label:
+            print(f"Target label {conf.target_label} did not match the selected pretrained model. Changing the target label to: {pretrained_mil_conf.target_label}")
+            conf.target_label = pretrained_mil_conf.target_label
 
     return conf
 

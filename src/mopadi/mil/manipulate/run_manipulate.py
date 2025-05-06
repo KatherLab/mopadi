@@ -75,29 +75,37 @@ def run_manipulate(config):
                 repo_id="KatherLab/MoPaDi",
                 filename="brca_512_model/autoenc.ckpt",
             )
-            clf_model_path = hf_hub_download(
-                repo_id="KatherLab/MoPaDi",
-                filename="brca_512_model/mil_cancer_types_classifier.pth",
-            )
+            if conf.pretrained_clf_name == 'e2_center':
+                clf_model_path = hf_hub_download(
+                    repo_id="KatherLab/MoPaDi",
+                    filename="brca_512_model/mil_e2_center_classifier.pth",
+                )
+            elif conf.pretrained_clf_name == 'type':
+                clf_model_path = hf_hub_download(
+                    repo_id="KatherLab/MoPaDi",
+                    filename="brca_512_model/mil_cancer_types_classifier.pth",
+                )
+            else:
+                raise ValueError(f"Unknown pretrained classifier name: {conf.pretrained_clf_name}. Please provide a valid type (e2_center or type) to use the pretrained model or train the classifier from scratch.")
         elif conf.pretrained_autoenc_name == 'pancancer_model':
             autoenc_model_path = hf_hub_download(
                 repo_id="KatherLab/MoPaDi",
                 filename="pancancer_model/autoenc.ckpt",
             )
-            if conf.pancancer_type == 'lung':
+            if conf.pretrained_clf_name == 'lung':
                 clf_model_path = hf_hub_download(
                     repo_id="KatherLab/MoPaDi",
                     filename="pancancer_model/mil_lung_classifier.pth",
                 )
-            elif conf.pancancer_type == 'liver':
+            else conf.pretrained_clf_name == 'liver':
                 clf_model_path = hf_hub_download(
                     repo_id="KatherLab/MoPaDi",
                     filename="pancancer_model/mil_liver_classifier.pth.pth",
                 )
             else:
-                raise ValueError(f"Unknown pancancer type: {conf.pancancer_type}. Please provide a valid type (liver or lung). Refer to the preprint for more info.")
+                raise ValueError(f"Unknown pretrained classifier name: {conf.pretrained_clf_name}. Please provide a valid type (liver or lung) to use the pretrained model or train the classifier from scratch.")
         else:
-            raise ValueError(f"Unknown pretrained model name: {conf.pretrained_autoenc_name}. Please provide a valid name (crc_512_model, brca_512_model, or pancancer_model). ")
+            raise ValueError(f"Unknown pretrained autoencoder name: {conf.pretrained_autoenc_name}. Please provide a valid name (crc_512_model, brca_512_model, or pancancer_model). ")
         print(f"Autoencoder's checkpoint downloaded to: {autoenc_model_path}")
         print(f"Classifier's checkpoint downloaded to: {clf_model_path}")
     else:
