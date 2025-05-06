@@ -6,8 +6,7 @@ def lung_pretrained_mil():
     conf.nr_feats = 512
     conf.num_epochs = 50
     conf.target_label = "Type"
-    conf.target_dict = {"Lung_squamous_cell_carcinoma": 0, 
-                        "Lung_adenocarcinoma": 1}
+    conf.target_dict = {"LUSC": 0, "LUAD": 1}
     return conf
 
 def crc_pretrained_mil():
