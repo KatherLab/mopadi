@@ -97,7 +97,7 @@ def run_manipulate(config):
                     repo_id="KatherLab/MoPaDi",
                     filename="pancancer_model/mil_lung_classifier.pth",
                 )
-            else conf.pretrained_clf_name == 'liver':
+            elif conf.pretrained_clf_name == 'liver':
                 clf_model_path = hf_hub_download(
                     repo_id="KatherLab/MoPaDi",
                     filename="pancancer_model/mil_liver_classifier.pth.pth",
