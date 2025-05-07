@@ -100,6 +100,7 @@ def default_mil_conf(config):
                 pretrained_mil_conf = lung_pretrained_mil()
             elif conf.pretrained_clf_name == "liver":
                 pretrained_mil_conf = liver_types_pretrained_mil()
+        assert pretrained_mil_conf is not None, f"Pretrained MIL model not found. Please check whether '{conf.pretrained_clf_name}' MIL model is available for the selected autoencoder: {conf.pretrained_autoenc_name}."
         
         if conf.target_dict is None:
             conf.target_dict = pretrained_mil_conf.target_dict
