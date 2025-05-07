@@ -15,17 +15,13 @@ import mopadi.configs.templates_cls as configs
 
 def run_crossval(conf):
 
-    required_keys = ['feat_path', 'feat_path_test', 'out_dir', 'clini_table', 'target_label', 'target_dict']
-    conf_dict = vars(conf)
-    missing = [key for key in required_keys if key not in conf_dict]
+    required_keys = ['feat_path', 'feat_path_test', 'out_dir', 'clini_table', 'target_label']
+    missing = [key for key in required_keys if key not in vars(conf)]
     assert not missing, f"Missing required keys in conf: {missing}"
 
     out_dir = os.path.join(conf.out_dir, 'crossval')
     if not os.path.exists(out_dir):
         Path(out_dir).mkdir(parents=True, exist_ok=True)
-
-    with open(os.path.join(out_dir, "parameters.json"), 'w') as config_file:
-        json.dump(conf_dict, config_file, indent=4)
 
     if conf.clini_table.endswith(".tsv"):
         clini_df = pd.read_csv(conf.clini_table,sep="\t")
@@ -67,7 +63,12 @@ def run_crossval(conf):
     if conf.target_dict is not None:
         classes = conf.target_dict.values()
     else:
-        classes = clini_df[conf.target_label].unique()
+        classes = sorted(clini_df[conf.target_label].dropna().unique())
+        conf.target_dict = {label: idx for idx, label in enumerate(classes)}
+        print(f"Auto-generated target_dict: {conf.target_dict}")
+
+    with open(os.path.join(out_dir, "parameters.json"), 'w') as config_file:
+        json.dump(vars(conf), config_file, indent=4)
 
     print(f"Running {conf.nr_folds}-fold cross-validation...")
     print(f"Classes: {np.array(list(classes))}")
