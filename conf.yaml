@@ -117,10 +117,10 @@ mil_classifier:
     clini_table: /path/to/clini_table.csv   # or .xlsx
     # Target label column in clinical table
     target_label: TARGET
-    # If values of target label column are not 0 and 1, provide a dictionary with mapping
-    target_dict: {"CLASS1": 0, "CLASS2": 1}
+    # If values of target label column are not numerical (e.g., 0, 1), provide a dictionary with mapping
+    #target_dict: {"CLASS1": 0, "CLASS2": 1}
     # How to split the filename to get patient name; e.g., TCGA-AB-1234-12345678.tif if fnames_index = 3 -> TCGA-AB-1234
-    fname_index: 3
+    #fname_index: 3
     # Number of folds for cross-validation
     number_of_folds: 5
 
