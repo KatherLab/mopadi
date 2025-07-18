@@ -69,15 +69,6 @@ def default_autoenc(config):
     data_config = config.get('data', {})
     autoenc_config = config.get('autoenc_model', {})
 
-    if config.pretrained_autoenc_name == "crc_512_model":
-        return CRC512AutoencConfig()
-    elif config.pretrained_autoenc_name == "brca_512_model":
-        return BRCA512AutoencConfig()
-    elif config.pretrained_autoenc_name == "pancancer_model":
-        return PanCancerAutoencConfig()
-    else:
-        raise ValueError(f"Unknown model config for {config.pretrained_autoenc_name}")
-
     conf.data_dirs = list(data_config.get('data_dirs', None))
     conf.test_patients_file_path = data_config.get('test_patients_file_path', None)
     conf.process_only_zips = data_config.get('process_only_zips', False)
@@ -89,7 +80,6 @@ def default_autoenc(config):
     conf.as_tensor = data_config.get('as_tensor', True)
     conf.do_normalize = data_config.get('do_normalize', True)
     conf.do_resize = data_config.get('do_resize', False)
-
 
     conf.img_size = autoenc_config.get('img_size', 224)
     conf.batch_size = autoenc_config.get('batch_size', 64)
@@ -169,7 +159,7 @@ def tcga_brca_autoenc():
 def pancancer_autoenc():
     conf = autoenc_base()
     conf.data_name = 'pancancer'
-    conf.base_dir = f'{ws_path}/mopadi/checkpoints/pancancer/autoenc'
+    conf.base_dir = '/checkpoints/pancancer/autoenc'
     conf.warmup = 0
     conf.total_samples = 200_000_000
     conf.img_size = 256
