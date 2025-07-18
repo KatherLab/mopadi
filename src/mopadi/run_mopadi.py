@@ -80,7 +80,7 @@ def main():
         # infer the features for training the latent DPM
         # NOTE: not gpu heavy, but more gpus can be of use!
         autoenc_conf = default_autoenc(config)
-        latent_infer_path = os.path.join(autoenc_conf.base_dir, 'latent.pkl')
+        latent_infer_path = os.path.join(autoenc_conf.base_dir, 'features.pkl')
         if not os.path.exists(latent_infer_path):
             print(f"Infering the features with the autoencoder from {os.path.join(autoenc_conf.base_dir, 'last.ckpt')}...")
             autoenc_conf.eval_programs = ['infer']
@@ -93,7 +93,7 @@ def main():
 
     elif args.command == 'linear_classifier':
         autoenc_conf = default_autoenc(config)
-        latent_infer_path = os.path.join(autoenc_conf.base_dir, 'latent.pkl')
+        latent_infer_path = os.path.join(autoenc_conf.base_dir, 'features.pkl')
         if not os.path.exists(latent_infer_path):
             print(f"Infering the features with the autoencoder from {os.path.join(autoenc_conf.base_dir, 'last.ckpt')}...")
             autoenc_conf.eval_programs = ['infer']
@@ -112,6 +112,7 @@ def main():
         if mode == 'train':
             run_train(mil_conf)
         if mode == 'manipulate':
+            # TODO: fix gpu selection, now it gets the default from manipulator_mil.py
             run_manipulate(config)
 
     else:

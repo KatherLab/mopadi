@@ -12,7 +12,6 @@ import numpy as np
 import pandas as pd
 import pytorch_lightning as pl
 import torch
-#from numpy.lib.function_base import flip
 from pytorch_lightning import loggers as pl_loggers
 from pytorch_lightning.callbacks import *
 from torch import nn
@@ -83,7 +82,7 @@ class LitModel(pl.LightningModule):
             else:
                 raise FileNotFoundError(f"Pretrained autoencoder checkpoint not found at {pretrained_path}")
 
-        latent_infer_path = os.path.join(conf.base_dir, 'latent.pkl')
+        latent_infer_path = os.path.join(conf.base_dir, 'features.pkl')
         if os.path.exists(latent_infer_path):
             print('Loading pre-extracted features of the encoder...')
             state = torch.load(latent_infer_path)
@@ -687,7 +686,7 @@ class LitModel(pl.LightningModule):
             if 'infer' in self.conf.eval_programs:
                 print('Extracting features with a pretrained encoder...')
                 conds = self.infer_whole_dataset().float()
-                save_path = os.path.join(self.conf.base_dir, 'latent.pkl')
+                save_path = os.path.join(self.conf.base_dir, 'features.pkl')
             else:
                 raise NotImplementedError()
 
@@ -720,7 +719,7 @@ class LitModel(pl.LightningModule):
                         render_save_path=
                         f'latent_infer_render{T}/{self.conf.name}.lmdb',
                     )
-                    save_path = f'latent_infer_render{T}/{self.conf.name}.pkl'
+                    save_path = f'latent_infer_render{T}/features.pkl'
                     conds_mean = conds.mean(dim=0)
                     conds_std = conds.std(dim=0)
                     if not os.path.exists(os.path.dirname(save_path)):
