@@ -84,10 +84,13 @@ class ClsModel(pl.LightningModule):
 
 
             # load the latent stats
-            latent_infer_path = os.path.join(conf.base_dir, 'latent.pkl')
-            if conf.manipulate_znormalize and os.path.exists(latent_infer_path):
+            if conf.feats_infer_path is None:
+                feats_infer_path = os.path.join(conf.base_dir, 'features.pkl')
+            else:
+                feats_infer_path = conf.feats_infer_path
+            if conf.manipulate_znormalize and os.path.exists(feats_infer_path):
                 print('Loading pre-extracted features of the encoder...')
-                state = torch.load(latent_infer_path)
+                state = torch.load(feats_infer_path)
                 self.conds = state['conds']
                 self.register_buffer('conds_mean',
                                      state['conds_mean'][None, :])
@@ -284,8 +287,7 @@ class ClsModel(pl.LightningModule):
 
         output = self.classifier.forward(latent)
         # print(f"Output: {output}")                
-        # pred = torch.sigmoid(output)
-        pred = torch.softmax(output)
+        pred = torch.sigmoid(output)
         # print(f"Pred: {pred}")    
         
         # label_list.append(label.cpu().numpy())

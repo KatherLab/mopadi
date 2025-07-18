@@ -6,11 +6,11 @@ from PIL import Image
 import torch
 from torchvision import transforms
 from torch.utils.data import DataLoader
-
-from configs.templates import *
-from configs.templates_cls import *
-from train_linear_cls import ClsModel
 from dotenv import load_dotenv
+
+from mopadi.configs.templates import *
+from mopadi.configs.templates_cls import *
+from mopadi.linear_clf.train_linear_cls import ClsModel
 
 load_dotenv()
 ws_path = os.getenv("WORKSPACE_PATH")
@@ -40,7 +40,7 @@ def write_results(log_dir, classes, ground_truth_df, save_path):
 
     combined_df.drop(columns=classes, inplace=True)
 
-    combined_df.to_csv(os.path.join(save_path, "patches-preds.csv"))
+    combined_df.to_csv(os.path.join(save_path, "patches-preds-new-june-2025.csv"))
 
 
 def make_gt_table(root_dir, save_dir):
@@ -59,9 +59,10 @@ def make_gt_table(root_dir, save_dir):
 
     for subdir, _, files in os.walk(root_dir):
         for file in files:
-            if not file.endswith(".jpg"):
+            if not file.endswith(".tif"):
                 continue
-            filenames.append(subdir + "/" + file)
+            #filenames.append(subdir + "/" + file)
+            filenames.append(file)
             subfolder_names.append(os.path.basename(subdir))
     # print(filenames)
     
@@ -125,7 +126,7 @@ class Tester():
         self.model.ema_model.to(device)
 
         self.cls_model = ClsModel(cls_conf)
-        state = torch.load(cls_checkpoint_dir, map_location="cpu")
+        state = torch.load(cls_checkpoint_dir, map_location="cpu", weights_only=False)
         print("latent step:", state["global_step"])
         self.cls_model.load_state_dict(state["state_dict"], strict=False)
         self.cls_model.to(device)
@@ -135,9 +136,12 @@ class Tester():
         with torch.no_grad():
             self.model.ema_model.eval()
             self.cls_model.ema_classifier.eval()
-            for data, label in tqdm(loader, desc="Predicting"):
-                data, label = data.cuda().float(), label.cuda().float()
-                latent = self.model.ema_model.encoder(data)
+            batch = next(iter(loader))
+            print(batch)
+            for data in tqdm(loader, desc="Predicting"):
+                img = data["img"].cuda().float()
+                label = data["labels"].float()
+                latent = self.model.ema_model.encoder(img)
                 latent = self.cls_model.normalize(latent)
                 output = self.cls_model.ema_classifier.forward(latent)                
                 pred = torch.sigmoid(output)
@@ -154,30 +158,38 @@ class Tester():
 if __name__ == "__main__":
 
     # Texture 100k ----------------------------------------------------------------------------------------------------------
-    """
-    gt_table_dir = f"{ws_path}/mopadi/datasets/texture/texture-val-ground-truth.csv"
-    checkpoint_dir= f"{ws_path}/mopadi/checkpoints/exp07-texture-latent-cls/last.ckpt"
-    cls_checkpoint_dir = f"{ws_path}/mopadi/checkpoints/exp07-texture-latent-cls/texture100k_autoenc_cls/last.ckpt"
-    log_dir = f"{ws_path}/mopadi/checkpoints/exp07-texture-latent-cls"
+
+    gt_table_dir = f"{ws_path}/mopadi/datasets/texture/texture-val-ground-truth-new.csv"
+    checkpoint_dir= f"{ws_path}/mopadi/checkpoints/texture100k/last.ckpt"
+    cls_checkpoint_dir = f"{ws_path}/mopadi/checkpoints/texture100k/texture100k_clf/last.ckpt"
+    log_dir = f"{ws_path}/mopadi/checkpoints/texture100k/cls_evaluation/new"
     images_dir = f"{ws_path}/data/texture100k/CRC-VAL-HE-7K"
+    classes = [
+        'ADI',
+        'BACK',
+        'DEB',
+        'LYM',
+        'MUC',
+        'MUS',
+        'NORM',
+        'STR',
+        'TUM',
+    ]
+
+    make_gt_table(root_dir=images_dir, save_dir=gt_table_dir)
 
     # configurations
     conf = texture100k_autoenc()
-    cls_conf = texture100k_autoenc_cls()
+    cls_conf = texture100k_linear_cls()
+    cls_conf.id_to_cls = classes
+    test_dataset = DefaultAttrDataset(root_dirs=[images_dir], attr_path=gt_table_dir, id_to_cls = classes)
 
-    make_gt_table_texture(root_dir=images_dir, save_dir=gt_table_dir)
-
-    tester = Tester(model_config=conf, checkpoint_path=checkpoint_dir, 
+    tester = Tester(model_config=conf, checkpoint_path=checkpoint_dir, cls_checkpoint_dir=cls_checkpoint_dir,
                     cls_conf=cls_conf, log_folder=log_dir)
     
-    test_dataset = TextureDataset(images_dir=images_dir,
-                            transform=transforms.Compose([
-                                transforms.ToTensor(),
-                                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-                                ]))
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=1)
     tester.test(test_loader)
-    """
+    write_results(log_dir=log_dir, classes=classes, ground_truth_df=gt_table_dir, save_path=log_dir)
 
     # TCGA CRC BRAF -------------------------------------------------------------------------------------------------------
     """
@@ -237,6 +249,7 @@ if __name__ == "__main__":
     """
 
     # Japan PanCancer TCGA------------------------------------------------------------------------------------------------
+    """
     gt_table_dir = f"{ws_path}/mopadi/datasets/japan/japan_anno_val/test_gt_table.txt"
     checkpoint_dir = f"{ws_path}/mopadi/checkpoints/pancancer/last.ckpt"
     cls_checkpoint_dir = f"{ws_path}/mopadi/checkpoints/pancancer/pancancer_cls/last.ckpt"
@@ -300,3 +313,4 @@ if __name__ == "__main__":
     ]
 
     write_results(log_dir=log_dir, classes=classes, ground_truth_df=gt_table_dir, save_path=log_dir)
+    """

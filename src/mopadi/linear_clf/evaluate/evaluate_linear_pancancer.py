@@ -3,16 +3,17 @@ import os
 import pandas as pd
 import numpy as np
 from PIL import Image
+from dotenv import load_dotenv
 
 import torch
 from torchvision import transforms
 from torch.utils.data import DataLoader
-
-from configs.templates import *
-from configs.templates_cls import *
-from linear_clf.train_linear_cls import ClsModel
-from dotenv import load_dotenv
 from torch.utils.data import Sampler
+
+from mopadi.configs.templates import *
+from mopadi.configs.templates_cls import *
+from mopadi.linear_clf.train_linear_cls import ClsModel
+
 
 load_dotenv()
 ws_path = os.getenv("WORKSPACE_PATH")

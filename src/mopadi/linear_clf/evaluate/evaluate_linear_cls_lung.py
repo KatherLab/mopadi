@@ -7,11 +7,12 @@ from PIL import Image
 import torch
 from torchvision import transforms
 from torch.utils.data import DataLoader
-
-from configs.templates import *
-from configs.templates_cls import *
-from train_linear_cls import ClsModel
 from dotenv import load_dotenv
+
+from mopadi.configs.templates import *
+from mopadi.configs.templates_cls import *
+from mopadi.train_linear_cls import ClsModel
+
 
 load_dotenv()
 ws_path = os.getenv("WORKSPACE_PATH")

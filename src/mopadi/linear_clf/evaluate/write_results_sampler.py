@@ -1,31 +1,26 @@
 #%%
 import os
-
 import sys
 sys.path.append("/mnt/bulk-mars/laura/diffae/mopadi")
 
 import pandas as pd
 import numpy as np
 from PIL import Image
+from dotenv import load_dotenv
 
 import torch
 from torchvision import transforms
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Sampler
 
-from configs.templates import *
-from configs.templates_cls import *
-from linear_clf.train_linear_cls import ClsModel
-from dotenv import load_dotenv
-from torch.utils.data import Sampler
-pd.set_option('display.max_columns', None)
+from mopadi.configs.templates import *
+from mopadi.configs.templates_cls import *
+from mopadi.linear_clf.train_linear_cls import ClsModel
 
-from dotenv import load_dotenv
+
 load_dotenv()
 ws_path = os.getenv("WORKSPACE_PATH")
 
-
 #%%
-
 def write_results(log_dir, classes, ground_truth_df, valid_filenames):
     """
     Takes paths of npy files with obtained results, and writes final results 

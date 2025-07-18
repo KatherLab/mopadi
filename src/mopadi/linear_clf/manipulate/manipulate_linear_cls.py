@@ -1,37 +1,27 @@
-from linear_clf.train_linear_cls import ClsModel
 from torchvision import transforms
 import torch
-from configs.templates import *
-from configs.templates_cls import *
 from torchmetrics.image import MultiScaleStructuralSimilarityIndexMeasure
 from skimage.metrics import structural_similarity, mean_squared_error
 import cv2
 
+from src.mopadi.linear_clf.train_linear_cls import ClsModel
+from src.mopadi.configs.templates import *
+from src.mopadi.configs.templates_cls import *
+
 
 class ImageManipulator:
-    def __init__(self, autoenc_config, autoenc_path, cls_config, cls_path, device="cuda:0"):
+    def __init__(self, autoenc_config, autoenc_path, cls_config, cls_path, latent_infer_path=None, device="cuda:0"):
         self.device = device
         self.image_dataset = None
         self.cls_config = cls_config
         self.model = self.load_model(autoenc_config, autoenc_path)
-        self.classifier = self.load_cls_model(cls_config, cls_path)
+        self.classifier = self.load_cls_model(cls_config, cls_path, latent_infer_path)
         self.normalizer = transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
 
         print("Both models loaded successfully.")
 
-        if self.cls_config.manipulate_mode == 'texture':
-            self.VALID_TARGET_CLASSES = TextureAttrDataset.id_to_cls
-        elif self.cls_config.manipulate_mode == 'tcga_crc_msi':
-            self.VALID_TARGET_CLASSES = TcgaCrcMsiAttrDataset.id_to_cls
-        elif self.cls_config.manipulate_mode == 'tcga_crc_braf':
-            self.VALID_TARGET_CLASSES = TCGACRCBRAFAttrDataset.id_to_cls
-        elif self.cls_config.manipulate_mode == 'brain':
-            self.VALID_TARGET_CLASSES = BrainAttrDataset.id_to_cls
-        elif self.cls_config.manipulate_mode == 'liver_cancer_types':
-            self.VALID_TARGET_CLASSES = LiverCancerTypesClsDataset.id_to_cls
-        else:
-            print('Target classes could not be determined.')
-        print(f"Valid target classes: {self.VALID_TARGET_CLASSES}")
+        print(f"Valid target classes: {cls_config.id_to_cls}")
+        self.cls_to_id = {v: k for k, v in enumerate(cls_config.id_to_cls)}
 
     def load_model(self, model_config, checkpoint_path):
         model = LitModel(model_config)
@@ -41,9 +31,9 @@ class ImageManipulator:
         model.to(self.device)
         return model
     
-    def load_cls_model(self, cls_config, cls_path):
+    def load_cls_model(self, cls_config, cls_path, latent_infer_path=None):
         cls_model = ClsModel(cls_config)
-        state = torch.load(cls_path)
+        state = torch.load(cls_path, weights_only=False)
         print('latent step:', state['global_step'])
         cls_model.load_state_dict(state['state_dict'], strict=False)
         cls_model.to(self.device)
@@ -60,8 +50,8 @@ class ImageManipulator:
         assert self.image_dataset is not None or dataset is not None, "Data is missing."
         self.image_dataset = dataset
 
-        if target_class not in self.VALID_TARGET_CLASSES:
-            raise ValueError(f"Invalid target class. Valid options are: {self.VALID_TARGET_CLASSES}")
+        if target_class not in self.cls_config.id_to_cls:
+            raise ValueError(f"Invalid target class. Valid options are: {self.cls_config.id_to_cls}")
 
         batch = self.image_dataset[image_index]["img"][None]  # batch shape needs to be torch.Size([1, 3, 224, 224])
 
@@ -99,8 +89,8 @@ class ImageManipulator:
         if save_fname_manip is None:
             save_fname_manip = f"manipulated_to_{target_class}_amplitude_{manipulation_amplitude}.png"
 
-        if target_class not in self.VALID_TARGET_CLASSES:
-            raise ValueError(f"Invalid target class. Valid options are: {self.VALID_TARGET_CLASSES}")
+        if target_class not in self.cls_config.id_to_cls:
+            raise ValueError(f"Invalid target class. Valid options are: {self.cls_config.id_to_cls}")
 
         if not os.path.exists(save_path):
             os.makedirs(save_path, exist_ok=True)
@@ -114,18 +104,8 @@ class ImageManipulator:
         results["ori_feats"] = semantic_latent
         results["stochastic_latent"] = stochastic_latent
 
-        if self.cls_config.manipulate_mode == 'texture':
-            cls_id = TextureAttrDataset.cls_to_id[target_class]
-            target_list = TextureAttrDataset.id_to_cls
-        elif self.cls_config.manipulate_mode == 'tcga_crc_msi':
-            cls_id = TcgaCrcMsiAttrDataset.cls_to_id[target_class]
-        elif self.cls_config.manipulate_mode == 'tcga_crc_braf':
-            cls_id = TCGACRCBRAFAttrDataset.cls_to_id[target_class]
-        elif self.cls_config.manipulate_mode == 'brain':
-            cls_id = BrainAttrDataset.cls_to_id[target_class]
-        elif self.cls_config.manipulate_mode == 'liver_cancer_types':
-            cls_id = LiverCancerTypesClsDataset.cls_to_id[target_class]
-            target_list = LiverCancerTypesClsDataset.id_to_cls
+        cls_id = self.cls_to_id[target_class]
+        target_list = self.cls_config.id_to_cls
 
         if not self.cls_config.linear:
             semantic_latent = semantic_latent.detach()

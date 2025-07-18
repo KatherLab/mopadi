@@ -24,6 +24,11 @@ from torch.utils.data.distributed import DistributedSampler
 
 
 @dataclass
+class PretrainConfig(BaseConfig):
+    name: str
+    path: str
+    
+@dataclass
 class MILconfig(BaseConfig):
     target_label: str = ""
     target_dict: dict = None

@@ -96,7 +96,7 @@ latent_dpm:
 
 # STEP 3 (OPTION 1): LINEAR CLASSIFIER (needed for the manipulation of images)
 linear_classifier:
-    target: TARGET
+    target: TARGET   # needed only for the folder name; training targets will be inferred from the attr_path
     classes: 
         - class1
         - class2
@@ -105,6 +105,8 @@ linear_classifier:
     batch_size: 32
     lr: 1e-3
     total_samples: 300000
+    use_pretrained_clf: false  # If true, will use the pretrained classifier and Texture (NCT100k) autoenc from Hugging Face
+    #feats_infer_path: /path/to/features/folder  # if not specified, will use the autoencoder output folder, only needed if it's downloaded from Hugging Face
 
 
 # STEP 3 (OPTION 2): MIL CLASSIFIER (needed for the manipulation of images)

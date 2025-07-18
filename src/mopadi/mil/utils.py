@@ -63,8 +63,13 @@ class Classifier(nn.Module):
     
 class FeatDataset(Dataset):
     def __init__(self, feat_list, annot_file, target_label, target_dict, nr_feats=None, indices=None, shuffle=False, fname_index=3):
-        self.feat_list = feat_list
-        self.indices = indices if indices is not None else list(range(len(self.feat_list)))
+
+        self.target_label = target_label
+        self.target_dict = target_dict
+        self.nr_feats = nr_feats
+        self.shuffle = shuffle
+        self.fname_index = fname_index
+
         try:
             if annot_file.endswith(".tsv"):
                 self.df = pd.read_csv(annot_file,sep="\t")
@@ -75,11 +80,20 @@ class FeatDataset(Dataset):
         except Exception:
             self.df = pd.read_excel(annot_file)
         self.df['PATIENT'] = self.df['PATIENT'].apply(lambda patient: "-".join(patient.split("-")[:3]))
-        self.target_label = target_label
-        self.target_dict = target_dict
-        self.nr_feats = nr_feats
-        self.shuffle = shuffle
-        self.fname_index = fname_index
+
+        valid_feat_list = []
+        for path in feat_list:
+            pat = "-".join(path.split("/")[-1].split(".h5")[0].split("-")[:fname_index])
+            if pat in self.df.PATIENT.values:
+                row = self.df[self.df.PATIENT == pat]
+                if not row[self.target_label].isna().values[0]:
+                    valid_feat_list.append(path)
+                else:
+                    print(f"Skipping patient {pat}: missing target label.")
+            else:
+                print(f"Skipping patient {pat}: not found in annotation file.")
+        self.feat_list = valid_feat_list
+        self.indices = indices if indices is not None else list(range(len(self.feat_list)))
 
     def __len__(self):
         return len(self.indices)
