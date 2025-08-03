@@ -1,0 +1,158 @@
+# The order of training mopadi models: 
+# autoencoder -> latent DPM (optional, for unconditional synthetic image generation) -> linear classifier or MIL classifier
+
+# After all the steps, the resulting folder structure will look like this:
+# checkpoints/
+# └── experiment_name/                         # base_dir
+#     ├── autoenc/                             # Autoencoder output
+#     ├── latent_dpm/                          # Latent DPM (optional)
+#     ├── linear_clf_TARGET_label/             # Linear classifier (option 1)
+#     ├── mil_classifier_TARGET_label/         # MIL classifier (option 2)
+#     │   ├── crossval/                        # Cross-validation results (optional)
+#     │   │   ├── fold_0/
+#     │   │   ├── ...
+#     │   │   └── fold_n/
+#     │   ├── full_model/                      # Model trained on all data
+#     │   └── counterfactuals/                 # Counterfactual results using the full model
+# Only base_dir is required, the rest will be created automatically
+
+# Training the autoencoder ideally requires 8 (40Gb) or 4 (80Gb) x A100, for all the other models one GPU is enough
+# For manipulation, only one GPU is needed
+# By default, if no gpus are given, the first GPU will be used for training if cuda is available. If needed, adjust this behaviour in run_mopadi.py
+gpus: [0]
+# Directory where training output will be saved, typically at checkpoints/EXPERIMENT_NAME
+# The folders for autoencoder, latent DPM and classifiers will be created automatically under this directory
+base_dir: checkpoints/experiment_name
+
+
+data:
+  # Necessary for the autoencoder (step 1), latent DPM training (optional step 2) and linear classifier (step 3 [option 1]), the starting point forthe MIL classifier (step 3 [option 2]) is already extracted features
+  # Directories containing tiles; can be multiple cohorts; by default will get all files with any of these extensions: ['.jpg', '.jpeg', '.png', '.tif', '.tiff']
+  data_dirs:
+    - /path/to/tiles/folder
+    #- /path/to/anothet/tiles/folder
+
+  # Optional, will not use these patients for training the autoencoder or will only use them if split is 'test'
+  # For an example of such file, please check datasets/patient_splits/TCGA_CRC_test_split.json
+  #test_patients_file_path: /path/to/test_patients.json
+
+  # Split parameter determines whether tiles will be sampled from train set or test set (if test_patients_file is given); 
+  # Possible options: none, train, test. If none, all the tiles in data_dirs will be used
+  split: none
+
+  # If one wants to limit the number of tiles for cohorts above the threshold
+  #max_tiles_per_patient: 1000
+  # Tile number limit after which the number of tiles per patient starts to be limited
+  #cohort_size_threshold: 1400000
+
+  # This enables processing zipped tiles outputted by STAMP, no need to extract them
+  process_only_zips: false
+
+  # This is useful in case multiple huge cohorts are used for the training, because scanning directories takes a while, 
+  # and it's performed multiple times. For small cohorts that are scanned very fast, the following two parameters can be ignored.
+  # To enable saving these cache files, uncomment and define the paths
+  #cache_pickle_tiles_path: /path/to/cache.pkl
+  #cache_cohort_sizes_path: /path/to/cohort_sizes_cache.json
+
+  # If resizing is enabled, the tiles will be resized according to the given image size
+  # otherwise please enter the actual tile size in pixels
+  do_resize: false
+  img_size: 224
+  do_normalize: true   # for the diffusion process to work well images are normalized with mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)
+
+
+# STEP 1: AUTOENCODER
+autoenc_model:
+  # All the parameters that can be modified can be found in the configs/config.py. 
+  # More default values can be found in configs/templates.py
+
+  # Total samples - not the total number of tiles, but how many samples the model will see before the training 
+  # is terminated, i.e., epoch number will depend on this number. Typically set high, and the training is stopped 
+  # for examples after 72-98h on HPC when the FID score is low enough (<20 good; <10 excellent)
+  total_samples: 200000000
+
+  # Number of samples the model 'sees' before the evaluation step is performed (LPIPS, FID is computed)
+  eval_every_samples: 1000000
+  eval_ema_every_samples: 1000000
+
+  # Select the batch size according to the available GPU memory to avoid OOM errors, but high enough to efficiently utilize the GPU
+  # The batch size is divided by the number of GPUs, so if you have 4 GPUs and set batch_size=64, each GPU will see 16 samples
+  #batch_size: 64
+  #batch_size_eval: 64 
+
+
+# STEP 2 (optional): LATENT DIFFUSION PROBABILISTIC MODEL (for unconditional synthetic image generation)
+latent_dpm:
+  # More default values can be found in configs/templates_latent.py
+
+  # Total samples - not the total number of tiles, but how many samples the model will see before the training 
+  # is terminated, i.e., epoch number will depend on this number
+  total_samples: 130000000
+  sample_every_samples: 4000000
+
+  #batch_size: 124
+  #batch_size_eval: 32
+
+
+# STEP 3 (OPTION 1): LINEAR CLASSIFIER (needed for the manipulation of images)
+linear_classifier:
+    target: TARGET   # needed only for the folder name; training targets will be inferred from the attr_path
+    classes: 
+        - class1
+        - class2
+        - class3
+    attr_path: /path/to/ground_truth.csv
+    batch_size: 32
+    lr: 1e-3
+    total_samples: 300000
+    use_pretrained_clf: false  # If true, will use the pretrained classifier and Texture (NCT100k) autoenc from Hugging Face
+    #feats_infer_path: /path/to/features/folder  # if not specified, will use the autoencoder output folder, only needed if it's downloaded from Hugging Face
+
+
+# STEP 3 (OPTION 2): MIL CLASSIFIER (needed for the manipulation of images)
+mil_classifier:
+    # Path to extracted feature files (h5 format) for training
+    feat_path_train: /path/to/extracted/features/of/train/set
+    # Path to extracted feature files (h5 format) for testing
+    feat_path_test: /path/to/extracted/features/of/test/set
+    # Clinical table with ground truth data, must contain PATIENT column
+    clini_table: /path/to/clini_table.csv   # or .xlsx
+    # Target label column in clinical table
+    target_label: TARGET
+    # If values of target label column are not numerical (e.g., 0, 1), provide a dictionary with mapping
+    #target_dict: {"CLASS1": 0, "CLASS2": 1}
+    # How to split the filename to get patient name; e.g., TCGA-AB-1234-12345678.tif if fnames_index = 3 -> TCGA-AB-1234
+    #fname_index: 3
+    # Number of folds for cross-validation
+    number_of_folds: 5
+
+    nr_feats: 512
+    num_epochs: 100
+
+    # The rest of parameters are needed only for the manipulation (creation of counterfactuals)
+
+    # Directory to the test tiles folder; must match features in feat_path_test
+    # alternatively, one can use the same folder as for training (data_dirs), but with the split set to 'test' & test_patients_file_path specified
+    #images_dir: /path/to/test/tiles/folder
+    # Make sure features extracted from images in images_dir are in feat_path_test folder
+
+    # If the following (patients/filename) are not specified, all the images in the directory will be manipulated
+    #patients: 
+    #  - patientID1
+    #  - patientID2
+    #filename: example  # NOTE: without the extension
+
+    # How many top predictive tiles per patient to use for manipulation if filename and patients are not specified
+    nr_top_tiles: 5
+
+    # Recommended starting point values for MIL approach, depending on the results (whether the class flips) might need to be adjusted
+    manipulation_levels: 
+      - 0.02
+      - 0.04
+      - 0.06
+      - 0.08
+
+    # Whether to use the pretrained model (will download from Hugging Face both the autoencoder and the classifier)
+    use_pretrained: false
+    #pretrained_autoenc_name: CHOOSE_FROM_OPTIONS    # Options: brca_512_model, crc_512_model, pancancer_model
+    #pretrained_clf_name: CHOOSE_FROM_OPTIONS        # Options: msi (default for crc_512_model), type or e2_center (for brca_512_model), lung or liver (for pancancer_model)

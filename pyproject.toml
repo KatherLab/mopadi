@@ -1,0 +1,49 @@
+[project]
+name = "mopadi"
+version = "0.1.0"
+description = "Counterfactual explanations of histopathology DL models"
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "Laura Zigutyte", email = "laura.zigutyte@tu-dresden.de" },
+    { name = "Tim Lenz", email = "tim.lenz@tu-dresden.de" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "torch==2.7.0",
+    "torchvision==0.22.0",
+    "torchmetrics==1.7.1",
+    "pytorch-lightning==2.5.1.post0",
+    "h5py==3.13.0",
+    "matplotlib==3.10.1",
+    "numpy==2.2.5",
+    "pandas==2.2.3",
+    "pillow==11.2.1",
+    "pytorch-fid==0.3.0",
+    "scipy==1.15.2",
+    "tqdm==4.67.1",
+    "tensorboard==2.19.0",
+    "scikit-learn==1.6.1",
+    "scikit-image==0.25.2",
+    "cmcrameri==1.9",
+    "python-dotenv==1.1.0",
+    "lpips==0.1.4",
+    "lmdb==1.6.2",
+    "opencv-python==4.11.0.86",
+    "wanshi @ git+https://github.com/lazigu/wanshi-utils.git@dev_laura",
+    "huggingface-hub[cli]==0.30.2",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["mopadi"]
+
+[project.scripts]
+mopadi = "mopadi.run_mopadi:main"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.uv]
+package = true
