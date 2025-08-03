@@ -1,6 +1,6 @@
 [project]
 name = "mopadi"
-version = "0.1.0"
+version = "0.2.0"
 description = "Counterfactual explanations of histopathology DL models"
 readme = "README.md"
 license = "MIT"
@@ -28,7 +28,9 @@ dependencies = [
     "cmcrameri==1.9",
     "python-dotenv==1.1.0",
     "lpips==0.1.4",
-    "lmdb==1.6.2",
+    "seaborn==0.13.2",
+    "transformers==4.48.1",
+    "timm==1.0.14",
     "opencv-python==4.11.0.86",
     "wanshi @ git+https://github.com/lazigu/wanshi-utils.git@dev_laura",
     "huggingface-hub[cli]==0.30.2",
