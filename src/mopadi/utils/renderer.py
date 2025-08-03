@@ -33,11 +33,10 @@ def render_condition(conf: TrainConfig,
     """
     Generate samples conditioned on extracted features.
     """
-    device = x_T.device
+    # = x_T.device
+    model.eval()
 
-    if conf.train_mode == TrainMode.diffusion:
-        assert conf.model_type.has_autoenc()
+    assert conf.model_type.has_autoenc()
+    with torch.no_grad():
+            # generate purely from noise guided by cond
         return sampler.sample(model=model, noise=x_T, cond=cond)
-    else:
-        raise NotImplementedError("Only diffusion mode is supported with precomputed features.")
-

@@ -28,16 +28,6 @@ class TrainMode(Enum):
             TrainMode.diffusion,
         ]
 
-    def require_dataset_infer(self):
-        """
-        whether training in this mode requires the pre-extracted features to be available?
-        """
-        # this will precalculate all the features beforehand
-        # and the dataset will be all the predicted features
-        return self in [
-            TrainMode.manipulate,
-        ]
-
 
 class ModelType(Enum):
     """
@@ -106,6 +96,7 @@ class GenerativeType(Enum):
 class OptimizerType(Enum):
     adam = 'adam'
     adamw = 'adamw'
+    lion = 'lion'
 
 
 class Activation(Enum):

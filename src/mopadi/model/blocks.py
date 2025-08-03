@@ -2,12 +2,14 @@ import math
 from abc import abstractmethod
 from dataclasses import dataclass
 from numbers import Number
+import numpy as np
 
 import torch as th
 import torch.nn.functional as F
+from torch import nn
+
 from mopadi.configs.choices import *
 from mopadi.configs.config_base import BaseConfig
-from torch import nn
 
 from .nn import (avg_pool_nd, conv_nd, linear, normalization,
                  timestep_embedding, torch_checkpoint, zero_module)

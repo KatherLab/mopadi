@@ -3,13 +3,15 @@
 # Original Source: https://github.com/phizaz/diffae
 # License: MIT
 
-from typing import Tuple
-from torch.utils.data import DataLoader
-from multiprocessing import get_context
 import os
 import shutil
-from torch.utils.data.distributed import DistributedSampler
+from typing import Tuple
+from multiprocessing import get_context
 from dataclasses import dataclass
+from dotenv import load_dotenv
+
+from torch.utils.data.distributed import DistributedSampler
+from torch.utils.data import DataLoader
 
 from mopadi.configs.config_base import BaseConfig
 from mopadi.dataset import *
@@ -22,6 +24,176 @@ from mopadi.model.latentnet import *
 from mopadi.diffusion.resample import UniformSampler
 from mopadi.diffusion.diffusion import space_timesteps
 
+load_dotenv()
+ws_path = os.getenv('WORKSPACE_PATH')
+
+
+tcga_all = [
+    f'{ws_path}/cache/TCGA-CRC',
+    f'{ws_path}/cache/TCGA-BRCA',
+    f'{ws_path}/cache/TCGA-BLCA',
+    f'{ws_path}/cache/TCGA-CESC',
+    f'{ws_path}/cache/TCGA-CHOL',
+    f'{ws_path}/cache/TCGA-DLBC',
+    f'{ws_path}/cache/TCGA-ESCA',
+    f'{ws_path}/cache/TCGA-GBM',
+    f'{ws_path}/cache/TCGA-HNSC',
+    f'{ws_path}/cache/TCGA-KICH',
+    f'{ws_path}/cache/TCGA-KIRC',
+    f'{ws_path}/cache/TCGA-KIRP',
+    f'{ws_path}/cache/TCGA-LGG',
+    f'{ws_path}/cache/TCGA-LIHC',
+    f'{ws_path}/cache/TCGA-LUAD',
+    f'{ws_path}/cache/TCGA-LUSC',
+    f'{ws_path}/cache/TCGA-MESO',
+    f'{ws_path}/cache/TCGA-OV',
+    f'{ws_path}/cache/TCGA-PAAD',
+    f'{ws_path}/cache/TCGA-PCPG',
+    f'{ws_path}/cache/TCGA-PRAD',
+    f'{ws_path}/cache/TCGA-SARC',
+    f'{ws_path}/cache/TCGA-SKCM',
+    f'{ws_path}/cache/TCGA-STAD',
+    f'{ws_path}/cache/TCGA-TGCT',
+    f'{ws_path}/cache/TCGA-THCA',
+    f'{ws_path}/cache/TCGA-THYM',
+    f'{ws_path}/cache/TCGA-UCEC',
+    f'{ws_path}/cache/TCGA-UCS',
+]
+
+
+tcga_all_feats = [
+    f'{ws_path}/features/mahmood-conch/TCGA-LUSC-from-cache/mahmood-conch-02627079',
+    f'{ws_path}/features/mahmood-conch/TCGA-LIHC-from-cache/mahmood-conch-34c73b45', 
+    f'{ws_path}/features/mahmood-conch/TCGA-LUAD-from-cache/mahmood-conch-34c73b45',
+    f'{ws_path}/features/mahmood-conch/TCGA-CRC-from-cache/mahmood-conch-34c73b45',
+    f'{ws_path}/features/mahmood-conch/TCGA-BRCA-from-cache/mahmood-conch-34c73b45',
+    f'{ws_path}/features/mahmood-conch/TCGA-BLCA-from-cache/mahmood-conch-34c73b45',
+    f'{ws_path}/features/mahmood-conch/TCGA-CESC-from-cache/mahmood-conch-34c73b45',
+    f'{ws_path}/features/mahmood-conch/TCGA-CHOL-from-cache/mahmood-conch-34c73b45',
+    f'{ws_path}/features/mahmood-conch/TCGA-DLBC-from-cache/mahmood-conch-34c73b45',
+    f'{ws_path}/features/mahmood-conch/TCGA-ESCA-from-cache/mahmood-conch-34c73b45',
+    f'{ws_path}/features/mahmood-conch/TCGA-GBM-from-cache/mahmood-conch-34c73b45', 
+    f'{ws_path}/features/mahmood-conch/TCGA-HNSC-from-cache/mahmood-conch-34c73b45', 
+    f'{ws_path}/features/mahmood-conch/TCGA-KICH-from-cache/mahmood-conch-34c73b45', 
+    f'{ws_path}/features/mahmood-conch/TCGA-KIRC-from-cache/mahmood-conch-34c73b45', 
+    f'{ws_path}/features/mahmood-conch/TCGA-KIRP-from-cache/mahmood-conch-34c73b45', 
+    f'{ws_path}/features/mahmood-conch/TCGA-LGG-from-cache/mahmood-conch-34c73b45', 
+    f'{ws_path}/features/mahmood-conch/TCGA-MESO-from-cache/mahmood-conch-34c73b45', 
+    f'{ws_path}/features/mahmood-conch/TCGA-OV-from-cache/mahmood-conch-34c73b45',
+    f'{ws_path}/features/mahmood-conch/TCGA-PAAD-from-cache/mahmood-conch-34c73b45', 
+    f'{ws_path}/features/mahmood-conch/TCGA-PCPG-from-cache/mahmood-conch-34c73b45',
+    f'{ws_path}/features/mahmood-conch/TCGA-PRAD-from-cache/mahmood-conch-34c73b45',
+    f'{ws_path}/features/mahmood-conch/TCGA-SARC-from-cache/mahmood-conch-34c73b45',
+    f'{ws_path}/features/mahmood-conch/TCGA-SKCM-from-cache/mahmood-conch-34c73b45',
+    f'{ws_path}/features/mahmood-conch/TCGA-STAD-from-cache/mahmood-conch-34c73b45',
+    f'{ws_path}/features/mahmood-conch/TCGA-TGCT-from-cache/mahmood-conch-34c73b45',
+    f'{ws_path}/features/mahmood-conch/TCGA-THCA-from-cache/mahmood-conch-34c73b45',
+    f'{ws_path}/features/mahmood-conch/TCGA-THYM-from-cache/mahmood-conch-34c73b45',
+    f'{ws_path}/features/mahmood-conch/TCGA-UCEC-from-cache/mahmood-conch-34c73b45',
+    f'{ws_path}/features/mahmood-conch/TCGA-UCS-from-cache/mahmood-conch-34c73b45',
+]
+
+data_paths = {
+    'tcga_all_conch': tcga_all,
+    'tcga_all_conch_sample_1024': tcga_all,
+
+    'tcga_crc_512_conch_nolmdb':  f'{ws_path}/cache/TCGA-CRC',
+    'tcga_brca_512_conch_nolmdb': f'{ws_path}/cache/TCGA-BRCA',
+    'tcga_blca_512_conch_nolmdb': f'{ws_path}/cache/TCGA-BLCA',
+    'tcga_cesc_512_conch_nolmdb': f'{ws_path}/cache/TCGA-CESC',
+    'tcga_chol_512_conch_nolmdb': f'{ws_path}/cache/TCGA-CHOL',
+    'tcga_dlbc_512_conch_nolmdb': f'{ws_path}/cache/TCGA-DLBC',
+    'tcga_esca_512_conch_nolmdb': f'{ws_path}/cache/TCGA-ESCA',
+    'tcga_gbm_512_conch_nolmdb':  f'{ws_path}/cache/TCGA-GBM',
+    'tcga_hnsc_512_conch_nolmdb': f'{ws_path}/cache/TCGA-HNSC',
+    'tcga_kich_512_conch_nolmdb': f'{ws_path}/cache/TCGA-KICH',
+    'tcga_kirc_512_conch_nolmdb': f'{ws_path}/cache/TCGA-KIRC',
+    'tcga_kirp_512_conch_nolmdb': f'{ws_path}/cache/TCGA-KIRP',
+    'tcga_lgg_512_conch_nolmdb':  f'{ws_path}/cache/TCGA-LGG',
+    'tcga_lihc_512_conch_nolmdb': f'{ws_path}/cache/TCGA-LIHC',
+    'tcga_luad_512_conch_nolmdb': f'{ws_path}/cache/TCGA-LUAD',
+    'tcga_lusc_512_conch_nolmdb': f'{ws_path}/cache/TCGA-LUSC',
+    'tcga_meso_512_conch_nolmdb': f'{ws_path}/cache/TCGA-MESO',
+    'tcga_ov_512_conch_nolmdb':   f'{ws_path}/cache/TCGA-OV',
+    'tcga_paad_512_conch_nolmdb': f'{ws_path}/cache/TCGA-PAAD',
+    'tcga_pcpg_512_conch_nolmdb': f'{ws_path}/cache/TCGA-PCPG',
+    'tcga_prad_512_conch_nolmdb': f'{ws_path}/cache/TCGA-PRAD',
+    'tcga_sarc_512_conch_nolmdb': f'{ws_path}/cache/TCGA-SARC',
+    'tcga_skcm_512_conch_nolmdb': f'{ws_path}/cache/TCGA-SKCM',
+    'tcga_stad_512_conch_nolmdb': f'{ws_path}/cache/TCGA-STAD',
+    'tcga_tgct_512_conch_nolmdb': f'{ws_path}/cache/TCGA-TGCT',
+    'tcga_thca_512_conch_nolmdb': f'{ws_path}/cache/TCGA-THCA',
+    'tcga_thym_512_conch_nolmdb': f'{ws_path}/cache/TCGA-THYM',
+    'tcga_ucec_512_conch_nolmdb': f'{ws_path}/cache/TCGA-UCEC',
+    'tcga_ucs_512_conch_nolmdb':  f'{ws_path}/cache/TCGA-UCS',
+
+    'tcga_crc_224_v2': f'{ws_path}/cache/TCGA-CRC',
+    'tcga_crc_448_conch1_5': f'{ws_path}/cache/TCGA-CRC',
+    'tcga_crc_448_conch': f'{ws_path}/cache/TCGA-CRC',
+
+    'tcga_crc_224_uni2': f'{ws_path}/cache/TCGA-CRC',
+}
+
+feat_paths = {
+    # CONCH
+    'tcga_all_conch': tcga_all_feats,
+    'tcga_all_conch_sample_1024': tcga_all_feats,
+
+    'tcga_crc_512_conch_nolmdb_fl32':  f'{ws_path}/features/mahmood-conch/TCGA-CRC-from-cache-fl32/mahmood-conch-68e004f9',
+    'tcga_crc_512_conch_nolmdb_fl32':  f'{ws_path}/features/mahmood-conch/TCGA-CRC-from-cache-fl32/mahmood-conch-68e004f9',     # float32
+    'tcga_brca_512_conch_nolmdb_fl32': f'{ws_path}/features/mahmood-conch/TCGA-BRCA-from-cache-fl32/mahmood-conch-68e004f9',   # float32
+
+    'tcga_lusc_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-LUSC-from-cache/mahmood-conch-02627079',
+
+    'tcga_lihc_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-LIHC-from-cache/mahmood-conch-34c73b45', 
+    'tcga_luad_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-LUAD-from-cache/mahmood-conch-34c73b45',
+    'tcga_crc_512_conch_nolmdb':  f'{ws_path}/features/mahmood-conch/TCGA-CRC-from-cache/mahmood-conch-34c73b45',
+    'tcga_brca_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-BRCA-from-cache/mahmood-conch-34c73b45',
+    'tcga_blca_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-BLCA-from-cache/mahmood-conch-34c73b45',
+    'tcga_cesc_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-CESC-from-cache/mahmood-conch-34c73b45',
+    'tcga_chol_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-CHOL-from-cache/mahmood-conch-34c73b45',
+    'tcga_dlbc_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-DLBC-from-cache/mahmood-conch-34c73b45',
+    'tcga_esca_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-ESCA-from-cache/mahmood-conch-34c73b45',
+    'tcga_gbm_512_conch_nolmdb':  f'{ws_path}/features/mahmood-conch/TCGA-GBM-from-cache/mahmood-conch-34c73b45', 
+    'tcga_hnsc_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-HNSC-from-cache/mahmood-conch-34c73b45', 
+    'tcga_kich_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-KICH-from-cache/mahmood-conch-34c73b45', 
+    'tcga_kirc_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-KIRC-from-cache/mahmood-conch-34c73b45', 
+    'tcga_kirp_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-KIRP-from-cache/mahmood-conch-34c73b45', 
+    'tcga_lgg_512_conch_nolmdb':  f'{ws_path}/features/mahmood-conch/TCGA-LGG-from-cache/mahmood-conch-34c73b45', 
+    'tcga_meso_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-MESO-from-cache/mahmood-conch-34c73b45', 
+    'tcga_ov_512_conch_nolmdb':   f'{ws_path}/features/mahmood-conch/TCGA-OV-from-cache/mahmood-conch-34c73b45',
+    'tcga_paad_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-PAAD-from-cache/mahmood-conch-34c73b45', 
+    'tcga_pcpg_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-PCPG-from-cache/mahmood-conch-34c73b45',
+    'tcga_prad_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-PRAD-from-cache/mahmood-conch-34c73b45',
+    'tcga_sarc_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-SARC-from-cache/mahmood-conch-34c73b45',
+    'tcga_skcm_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-SKCM-from-cache/mahmood-conch-34c73b45',
+    'tcga_stad_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-STAD-from-cache/mahmood-conch-34c73b45',
+    'tcga_tgct_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-TGCT-from-cache/mahmood-conch-34c73b45',
+    'tcga_thca_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-THCA-from-cache/mahmood-conch-34c73b45',
+    'tcga_thym_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-THYM-from-cache/mahmood-conch-34c73b45',
+    'tcga_ucec_512_conch_nolmdb': f'{ws_path}/features/mahmood-conch/TCGA-UCEC-from-cache/mahmood-conch-34c73b45',
+    'tcga_ucs_512_conch_nolmdb':  f'{ws_path}/features/mahmood-conch/TCGA-UCS-from-cache/mahmood-conch-34c73b45',
+
+    # VIRCHOW2
+    'tcga_crc_224_v2': f'{ws_path}/features/virchow2/TCGA-CRC-from-cache/virchow2-34c73b45',
+    'tcga_brca_224_v2': f'{ws_path}/features/virchow2/TCGA-BRCA-from-cache/virchow2-34c73b45',
+
+    # CONCHv1.5
+    'tcga_crc_448_conch1_5': f'{ws_path}/features/mahmood-conch1_5/TCGA-CRC-from-cache/mahmood-conch1_5-34c73b45',
+    'tcga_brca_448_conch1_5': f'{ws_path}/features/mahmood-conch1_5/TCGA-BRCA-from-cache/mahmood-conch1_5-34c73b45',
+
+    #UNI2
+    'tcga_crc_224_uni2': f'{ws_path}/features/mahmood-uni2/TCGA-CRC-from-cache/uni2-34c73b45',
+
+    #CONCH
+    'tcga_crc_448_conch': f'{ws_path}/features/mahmood-conch/TCGA-CRC-from-cache/mahmood-conch-34c73b45',
+
+}
+
+test_patient_files = {
+    'tcga_all_conch': None,
+    'tcga_crc_512_conch_nolmdb': f'{ws_path}/dev_fm/mopadi/datasets/patient_splits/TCGA_CRC_test_split.json'
+}
 
 @dataclass
 class PretrainConfig(BaseConfig):
@@ -66,6 +238,8 @@ class TrainConfig(BaseConfig):
     batch_size_eval: int = None
     beatgans_gen_type: GenerativeType = GenerativeType.ddim
     beatgans_loss_type: LossType = LossType.mse
+    feat_loss: bool = False
+    lambda_feat: float = 0.5   # for computing final loss if feat_loss True
     beatgans_model_mean_type: ModelMeanType = ModelMeanType.eps
     beatgans_model_var_type: ModelVarType = ModelVarType.fixed_large
     beatgans_rescale_timesteps: bool = False
@@ -83,9 +257,9 @@ class TrainConfig(BaseConfig):
     fp16: bool = False
     grad_clip: float = 1
     img_size: int = 64
-    lr: float = 0.0001
-    optimizer: OptimizerType = OptimizerType.adam
-    weight_decay: float = 0
+    lr: float = 0.0001  # 0.0001 default (adam); 3-10x smaller for lion optimizer
+    optimizer: OptimizerType = OptimizerType.adam  #adam or adamw or lion
+    weight_decay: float = 0  # default - 0; lion - 3-10x larger than that for AdamW
     model_conf: ModelConfig = None
     model_name: ModelName = None
     model_type: ModelType = None
@@ -93,6 +267,11 @@ class TrainConfig(BaseConfig):
     net_beatgans_attn_head: int = 1
     # not necessarily the same as the the number of style channels
     net_beatgans_embed_channels: int = 512 # conch v1.5 = 768
+    feat_extractor: str = 'conch'
+    feat_dim: int = 512
+    enc_transform_dim: int = 1024  # feat projection layer
+    enc_transform_nheads: int = 8  # feat projection layer
+    enc_transform_num_layers: int = 2  # feat projection layer
     net_resblock_updown: bool = True
     net_enc_use_time: bool = False
     net_enc_pool: str = 'adaptivenonzero'
@@ -127,11 +306,15 @@ class TrainConfig(BaseConfig):
     T: int = 1_000
     total_samples: int = 10_000_000
     warmup: int = 0
-    continue_from: str = None
-    load_pretrained_autoenc: bool = False
+    pretrain: PretrainConfig = None
+    continue_from: PretrainConfig = None
     eval_programs: Tuple[str] = None
+    # if present load the checkpoint from this path instead
+    eval_path: str = None
     base_dir: str = 'checkpoints'
-    work_cache_dir: str = os.path.expanduser('~/cache')
+    use_cache_dataset: bool = False
+    data_cache_dir: str = os.path.join(ws_path, 'cache')
+    work_cache_dir: str = os.path.join(ws_path, 'mopadi_cache')
     # to be overridden
     name: str = ''
 
@@ -153,9 +336,26 @@ class TrainConfig(BaseConfig):
 
     @property
     def fid_cache(self):
-        # we try to use the local dirs to reduce the load over network drives
-        # hopefully, this would reduce the disconnection problems with sshfs
         return f'{self.work_cache_dir}/eval_images/{self.data_name}_size{self.img_size}_{self.eval_num_images}'
+
+    @property
+    def data_path(self):
+        # may use the cache dir
+        path = data_paths[self.data_name]
+        if self.use_cache_dataset and path is not None:
+            path = use_cached_dataset_path(
+                path, f'{self.data_cache_dir}/{self.data_name}')
+        return path
+
+    @property
+    def feat_path(self):
+        feat_path = feat_paths[self.data_name]
+        return feat_path
+
+    @property
+    def test_patient_file(self):
+        test_patient_file = test_patient_files[self.data_name]
+        return test_patient_file
 
     @property
     def logdir(self):
@@ -163,9 +363,24 @@ class TrainConfig(BaseConfig):
 
     @property
     def generate_dir(self):
-        # we try to use the local dirs to reduce the load over network drives
-        # hopefully, this would reduce the disconnection problems with sshfs
         return f'{self.work_cache_dir}/gen_images/{self.name}'
+
+    @property
+    def normalization_params(self):
+        params_dict = {
+            "conch1_5": ([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+            "conch": ([0.48145466, 0.4578275, 0.40821073], [0.26862954, 0.26130258, 0.27577711]),
+            "v2": ([0.4850, 0.4560, 0.4060], [0.2290, 0.2240, 0.2250]),
+            "uni2": ([0.4850, 0.4560, 0.4060], [0.2290, 0.2240, 0.2250]),
+            "default": ([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+        }
+        
+        if self.feat_extractor in params_dict:
+            return params_dict[self.feat_extractor]
+        else:
+            raise ValueError(f"Unknown feature extractor '{self.feat_extractor}'. "
+                             "Please add it to 'normalization_params'.")
+
 
     def _make_diffusion_conf(self, T=None):
         if self.diffusion_type == 'beatgans':
@@ -179,7 +394,7 @@ class TrainConfig(BaseConfig):
             else:
                 raise NotImplementedError()
 
-            return SpacedDiffusionBeatGansConfig(
+            diffusion_conf = SpacedDiffusionBeatGansConfig(
                 gen_type=self.beatgans_gen_type,
                 model_type=self.model_type,
                 betas=get_named_beta_schedule(self.beta_scheduler, self.T),
@@ -190,7 +405,23 @@ class TrainConfig(BaseConfig):
                 use_timesteps=space_timesteps(num_timesteps=self.T,
                                               section_counts=section_counts),
                 fp16=self.fp16,
+                feat_loss=self.feat_loss,
+                lambda_feat=self.lambda_feat
             )
+            diffusion_conf.normalization_params = self.normalization_params
+            #TODO: this part is weird
+            if self.feat_extractor == 'conch':
+                diffusion_conf.feature_extractor = FeatureExtractorConch()
+            elif self.feat_extractor == 'conch1_5':
+                diffusion_conf.feature_extractor = FeatureExtractorConch15()
+            elif self.feat_extractor == 'v2':
+                diffusion_conf.feature_extractor = FeatureExtractorVirchow2()
+            elif self.feat_extractor == 'uni2':
+                diffusion_conf.feature_extractor = FeatureExtractorUNI2()
+            else:
+                raise ValueError(f"Unknown feature extractor '{self.feat_extractor}'. Please check configuration.")
+
+            return diffusion_conf
         else:
             raise NotImplementedError()
 
@@ -211,21 +442,23 @@ class TrainConfig(BaseConfig):
         return self._make_diffusion_conf(T=self.T_eval)
 
     def make_dataset(self, path=None, **kwargs):
-        print(f"Tiles will be loaded from: {self.data_dirs}")
-        return DefaultTilesDataset(
-            root_dirs=self.data_dirs,
-            test_patients_file_path=self.test_patients_file_path,
-            split=self.split,
-            max_tiles_per_patient=self.max_tiles_per_patient,
-            cohort_size_threshold=self.cohort_size_threshold,
-            as_tensor=self.as_tensor,
-            do_normalize=self.do_normalize,
-            do_resize=self.do_resize,
-            img_size=self.img_size,
-            process_only_zips=self.process_only_zips,
-            cache_pickle_tiles_path=self.cache_pickle_tiles_path,
-            cache_cohort_sizes_path=self.cache_cohort_sizes_path,
-            **kwargs)
+        print(f"Used dataset: {self.data_name}, {path} or {self.data_path}")
+        if self.data_name == 'tcga_crc_512_conch_nolmdb' or self.data_name == 'tcga_brca_512_conch_nolmdb':
+            return ImageTileDatasetWithFeatures(root_dirs=[path] or [self.data_path], features_dirs=self.feat_path, test_patients_file=self.test_patient_file, feat_extractor='conch', **kwargs)
+        elif self.data_name == 'tcga_all_conch':
+            return ImageTileDatasetWithFeatures(root_dirs=self.data_path, features_dirs=self.feat_path, test_patients_file=None, feat_extractor='conch', cache_pickle_tiles_path='temp/tcga_all_tile_paths_all.pkl', **kwargs)
+        elif self.data_name == 'tcga_all_conch_sample_1024':
+            return ImageTileDatasetWithFeatures(root_dirs=self.data_path, features_dirs=self.feat_path, test_patients_file=None, max_tiles_per_patient=1024, feat_extractor='conch', cache_pickle_tiles_path='temp/tcga_all_tile_paths_sampled_1024.pkl', **kwargs)
+        elif self.data_name == 'tcga_crc_224_v2':
+            return ImageTileDatasetWithFeatures(root_dirs=[self.data_path], features_dirs=[self.feat_path], test_patients_file=None, max_tiles_per_patient=None, feat_extractor='v2', cache_pickle_tiles_path='temp/tcga_crc.pkl', **kwargs)
+        elif self.data_name == 'tcga_crc_448_conch1_5':
+            return ImageTileDatasetWithFeatures(root_dirs=[self.data_path], features_dirs=[self.feat_path], test_patients_file=None, max_tiles_per_patient=None, feat_extractor='conch1_5', cache_pickle_tiles_path='temp/tcga_crc.pkl', **kwargs)
+        elif self.data_name == 'tcga_crc_448_conch':
+            return ImageTileDatasetWithFeatures(root_dirs=[self.data_path], features_dirs=[self.feat_path], test_patients_file=None, max_tiles_per_patient=None, feat_extractor='conch', cache_pickle_tiles_path='temp/tcga_crc.pkl', **kwargs)
+        elif self.data_name == 'tcga_crc_224_uni2':
+            return ImageTileDatasetWithFeatures(root_dirs=[self.data_path], features_dirs=[self.feat_path], test_patients_file=None, max_tiles_per_patient=None, feat_extractor='uni2', cache_pickle_tiles_path='temp/tcga_crc.pkl', **kwargs)
+        else:
+            raise NotImplementedError()
 
     def make_loader(self,
                     dataset,
@@ -335,3 +568,25 @@ def use_cached_dataset_path(source_path, cache_path):
             shutil.copytree(source_path, cache_path)
     barrier()
     return cache_path
+
+def denormalize_img(images, conf: TrainConfig):
+    """
+    Undo the normalization of an image tensor.
+    """
+    mean, std = conf.normalization_params
+    assert images.ndim == 4, f"Expected 4D input, got {images.ndim}D"
+    mean = torch.tensor(mean, device=images.device).view(1, -1, 1, 1)
+    std = torch.tensor(std, device=images.device).view(1, -1, 1, 1)
+    images = images * std + mean
+    return torch.clamp(images, 0, 1)
+
+def normalize_img(images, conf: TrainConfig):
+    """
+    Apply the normalization to an image tensor.
+    """
+    mean, std = conf.normalization_params
+    assert images.ndim == 4, f"Expected 4D input, got {images.ndim}D"
+    mean = torch.tensor(mean, device=images.device).view(1, -1, 1, 1)
+    std = torch.tensor(std, device=images.device).view(1, -1, 1, 1)
+    images = (images - mean) / std
+    return images

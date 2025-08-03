@@ -349,6 +349,92 @@ class DefaultTilesDataset(TilesDataset):
                     return {'image': image, 'filename': file}
 
 
+class ImageTileDatasetWithFeatures(DefaultTilesDataset):
+    def __init__(self, 
+                root_dirs: list, 
+                features_dirs: list,
+                test_patients_file: str = None,
+                split: str = 'none',
+                max_tiles_per_patient: int = None,
+                feat_extractor: str = 'conch',
+                as_tensor: bool = True,
+                do_normalize: bool = True,
+                do_resize: bool = True,
+                process_only_zips: bool = False,
+                cache_pickle_tiles_path: str = None,
+    ):
+        super().__init__(root_dirs=root_dirs, test_patients_file=test_patients_file, split=split, max_tiles_per_patient=max_tiles_per_patient, process_only_zips=process_only_zips, cache_pickle_tiles_path=cache_pickle_tiles_path)
+        self.features_dirs = features_dirs
+
+        transform_list = []
+        if do_resize:
+            if feat_extractor == 'conch1_5':
+                transform_list.append(transforms.Resize(size=448, interpolation=transforms.InterpolationMode.BILINEAR))
+            elif feat_extractor == 'conch':
+                transform_list.append(transforms.Resize(size=448, interpolation=transforms.InterpolationMode.BICUBIC, antialias=True))
+            elif feat_extractor == 'v2':
+                transform_list.append(transforms.Resize(size=224, interpolation=transforms.InterpolationMode.BICUBIC, max_size=None, antialias=True))
+            elif feat_extractor == 'uni2':
+                transform_list.append(transforms.Resize(size=224, interpolation=transforms.InterpolationMode.BILINEAR, max_size=None, antialias=True))
+            elif feat_extractor == 'custom':
+                transform_list.append(transforms.Resize(size=512, interpolation=transforms.InterpolationMode.BILINEAR, max_size=None, antialias=True))
+            else:
+                raise NotImplementedError()
+        if as_tensor:
+            transform_list.append(transforms.ToTensor())
+        if do_normalize:
+                transform_list.append(transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)))
+        if transform_list:
+            self.transform = transforms.Compose(transform_list)
+        else:
+            self.transform = None
+
+    def __getitem__(self, index):
+        tile_path = self.tile_paths[index]
+
+        if ".zip:" in tile_path:
+            zip_path, internal_path = tile_path.split(":", 1)
+            
+            with zipfile.ZipFile(zip_path, 'r') as z:
+                with z.open(internal_path) as img_file:
+                    image = Image.open(BytesIO(img_file.read())).convert("RGB")
+            patient_id = '.'.join(os.path.basename(tile_path).split('.zip')[0].split('.')[:2])
+        else: 
+            image = Image.open(tile_path).convert("RGB")
+            patient_id = '.'.join(os.path.basename(os.path.dirname(tile_path)).split('.')[:2])
+
+        tile_coords = extract_coords(tile_path)
+        cohort = os.path.basename(os.path.dirname(os.path.dirname(tile_path)))   # works only if not zip?
+
+        found = False
+        for features_dir in self.features_dirs:
+            if cohort not in features_dir:
+                continue
+
+            feat_path = os.path.join(features_dir, f"{patient_id}.h5")
+            with h5py.File(feat_path, 'r') as f:
+                features = torch.tensor(f['feats'][:])
+                coords = np.array(f["coords"][:])
+                #match_idx = np.where((tile_coords == coords).all(axis=1))[0]
+
+                coords_dict = {tuple(coord): idx for idx, coord in enumerate(coords)}
+                match_idx = coords_dict.get(tuple(tile_coords))
+
+                if match_idx is None:
+                #if len(match_idx) == 0:
+                    print(f'Feats not found for patient {patient_id} tile {tile_coords}')
+                #elif len(match_idx) > 1:
+                #    print(f'Weirdly multiple feats found (N = {len(match_idx)}) for patient {patient_id} tile {tile_coords}')
+                else:
+                    found = True
+                    break
+
+        if self.transform:
+            image = self.transform(image)
+
+        return {"img": image, "feat": features[match_idx], "coords": tile_coords, "filename": tile_path}
+
+
 class DefaultAttrDataset(Dataset):
     def __init__(
         self,

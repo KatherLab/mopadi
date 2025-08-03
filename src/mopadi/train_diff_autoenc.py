@@ -7,19 +7,16 @@ import copy
 import json
 import os
 import re
-
 import numpy as np
-import pandas as pd
+
 import pytorch_lightning as pl
-import torch
 from pytorch_lightning import loggers as pl_loggers
 from pytorch_lightning.callbacks import *
-from torch import nn
-from torch import amp
-from torch.cuda.amp import autocast
-from torch.distributions import Categorical
+
+import torch
+from torch.amp import autocast
 from torch.optim.optimizer import Optimizer
-from torch.utils.data.dataset import ConcatDataset, TensorDataset
+from torch.utils.data.dataset import TensorDataset
 from torchvision.utils import make_grid, save_image
 
 from mopadi.configs.config import *
@@ -86,17 +83,18 @@ class LitModel(pl.LightningModule):
             self.conds_mean = None
             self.conds_std = None
 
-    def normalize(self, cond):
-        cond = (cond - self.conds_mean.to(self.device)) / self.conds_std.to(
-            self.device)
-        return cond
+    #def normalize(self, cond):
+    #    cond = (cond - self.conds_mean.to(self.device)) / self.conds_std.to(
+    #        self.device)
+    #    return cond
 
-    def denormalize(self, cond):
-        cond = (cond * self.conds_std.to(self.device)) + self.conds_mean.to(
-            self.device)
-        return cond
+    #def denormalize(self, cond):
+    #    cond = (cond * self.conds_std.to(self.device)) + self.conds_mean.to(
+    #        self.device)
+    #    return cond
 
     def sample(self, N, device, T=None):
+        """Not possible for current set up"""
         if T is None:
             sampler = self.eval_sampler
         else:
@@ -114,14 +112,11 @@ class LitModel(pl.LightningModule):
         pred_img = (pred_img + 1) / 2   # normalize to [0, 1] range
         return pred_img
 
-    def render(self, noise, cond=None, T=None):
+    def render(self, noise, cond, T=None):
         if T is None:
             sampler = self.eval_sampler
         else:
             sampler = self.conf._make_diffusion_conf(T).make_sampler()
-
-        if cond is None:
-            cond = self.encode(noise)
 
         pred_img = render_condition(self.conf,
                                     self.ema_model,
@@ -143,7 +138,7 @@ class LitModel(pl.LightningModule):
         return out['sample']
 
     def forward(self, noise=None, x_start=None, ema_model: bool = False):
-        with autocast('cuda', enabled=False):
+        with autocast(device_type='cuda', enabled=False):
             if ema_model:
                 model = self.ema_model
             else:
@@ -170,9 +165,16 @@ class LitModel(pl.LightningModule):
         self.train_data = self.conf.make_dataset()
         self.val_data = self.train_data
 
-        # initialize FeatureExtractorConch after the device is set
-        if self.feature_extractor is None:
-            self.feature_extractor = FeatureExtractorConch(device=self.device)
+        # initialize Feature Extractor after the device is set
+        if self.feature_extractor is None: 
+            if self.conf.feat_extractor == 'conch':
+                self.feature_extractor = FeatureExtractorConch(device=self.device)
+            elif self.conf.feat_extractor == 'conch1_5':
+                self.feature_extractor = FeatureExtractorConch15(device=self.device)
+            elif self.conf.feat_extractor == 'v2':
+                self.feature_extractor = FeatureExtractorVirchow2(device=self.device)
+            elif self.conf.feat_extractor == 'uni2':
+                self.feature_extractor = FeatureExtractorUNI2(device=self.device)
 
         self.model.feature_extractor = self.feature_extractor
         self.ema_model.feature_extractor = self.feature_extractor
@@ -221,8 +223,7 @@ class LitModel(pl.LightningModule):
         given an input, calculate the loss function
         no optimization at this stage.
         """
-        
-        with autocast(enabled=False):
+        with autocast(device_type='cuda', enabled=False):
 
             imgs = batch['img']
             feats = batch['feat']
@@ -236,7 +237,8 @@ class LitModel(pl.LightningModule):
                 t, weight = self.T_sampler.sample(len(imgs), imgs.device)
                 losses = self.sampler.training_losses(
                     model=self.model, 
-                    x_start=imgs, 
+                    x_start=imgs,
+                    cond=feats,
                     t=t,
                     model_kwargs=model_kwargs
                 )
@@ -267,15 +269,13 @@ class LitModel(pl.LightningModule):
             ema(self.model, self.ema_model, self.conf.ema_decay)
 
             # logging
-            if self.conf.train_mode.require_dataset_infer():
-                imgs = None
-            else:
-                imgs = batch['img']
-            self.log_sample(x_start=imgs)
+            imgs = batch['img']
+            conds = batch['feat']
+            self.log_sample(x_start=imgs, cond=conds)
             self.evaluate_scores()
 
     def on_before_optimizer_step(self, optimizer: Optimizer,) -> None:
-                                 #optimizer_idx: int
+        # optimizer_idx: int
         # fix the fp16 + clip grad norm problem with pytorch lightinng
         # this is the currently correct way to do it
         if self.conf.grad_clip > 0:
@@ -288,7 +288,7 @@ class LitModel(pl.LightningModule):
                                            max_norm=self.conf.grad_clip)
             # print('after:', grads_norm(iter_opt_params(optimizer)))
 
-    def log_sample(self, x_start):
+    def log_sample(self, x_start, cond):
         """
         put images to the tensorboard
         """
@@ -296,10 +296,9 @@ class LitModel(pl.LightningModule):
                postfix,
                use_xstart,
                save_real=False,
-               interpolate=False):
+               cond=None):
 
             model.eval()
-            assert model.feature_extractor is not None, f"Pretrained feature extractor not initialized on {model.device}"
 
             with torch.no_grad():
                 all_x_T = self.split_tensor(self.x_T)
@@ -315,24 +314,8 @@ class LitModel(pl.LightningModule):
                         _xstart = None
 
                     if _xstart is not None:
-                        pretrained_feats = model.feature_extractor.extract_feats(_xstart).squeeze()
+                        assert cond is not None, "Features missing for a given xstart img"
 
-                    if not use_xstart and self.conf.model_type.has_noise_to_cond(
-                    ):
-                        model: BeatGANsAutoencModel
-                        # special case, it may not be stochastic, yet can sample
-                        cond = torch.randn(len(x_T),
-                                            self.conf.style_ch,
-                                            device=self.device)
-                        cond = pretrained_feats
-                    else:
-                        if interpolate:
-                            with amp.autocast(self.conf.fp16):
-                                cond = model.feature_extractor.extract_feats(_xstart)
-                                i = torch.randperm(len(cond))
-                                cond = (cond + cond[i]) / 2
-                        else:
-                            cond = None
                     gen = self.eval_sampler.sample(model=model,
                                                     noise=x_T,
                                                     cond=cond,
@@ -353,45 +336,30 @@ class LitModel(pl.LightningModule):
 
                     if self.global_rank == 0:
                         grid_real = (make_grid(real) + 1) / 2
-                        self.logger.experiment.add_image(
-                            f'sample{postfix}/real', grid_real,
-                            self.num_samples)
+                        sample_dir = os.path.join(self.conf.logdir, f'sample_real{postfix}')
+                        if not os.path.exists(sample_dir):
+                            os.makedirs(sample_dir)
+                        path = os.path.join(sample_dir, '%d.png' % self.num_samples)
+                        save_image(grid_real, path)
+                        self.logger.experiment.add_image(f'sample{postfix}/real', grid_real, self.num_samples)
 
                 if self.global_rank == 0:
                     # save samples to the tensorboard
                     grid = (make_grid(gen) + 1) / 2
-                    sample_dir = os.path.join(self.conf.logdir,
-                                              f'sample{postfix}')
+                    sample_dir = os.path.join(self.conf.logdir, f'sample{postfix}')
                     if not os.path.exists(sample_dir):
                         os.makedirs(sample_dir)
-                    path = os.path.join(sample_dir,
-                                        '%d.png' % self.num_samples)
+                    path = os.path.join(sample_dir, '%d.png' % self.num_samples)
                     save_image(grid, path)
-                    self.logger.experiment.add_image(f'sample{postfix}', grid,
-                                                     self.num_samples)
+                    self.logger.experiment.add_image(f'sample{postfix}', grid, self.num_samples)
             model.train()
 
         if self.conf.sample_every_samples > 0 and is_time(
                 self.num_samples, self.conf.sample_every_samples,
                 self.conf.batch_size_effective):
 
-            if self.conf.train_mode.require_dataset_infer():
-                do(self.model, '', use_xstart=False)
-                do(self.ema_model, '_ema', use_xstart=False)
-            else:
-                if self.conf.model_type.has_autoenc(
-                ) and self.conf.model_type.can_sample():
-                    do(self.model, '', use_xstart=False)
-                    do(self.ema_model, '_ema', use_xstart=False)
-                    # autoencoding mode
-                    do(self.model, '_enc', use_xstart=True, save_real=True)
-                    do(self.ema_model,
-                       '_enc_ema',
-                       use_xstart=True,
-                       save_real=True)
-                else:
-                    do(self.model, '', use_xstart=True, save_real=True)
-                    do(self.ema_model, '_ema', use_xstart=True, save_real=True)
+            do(self.model, '', use_xstart=True, save_real=True, cond=cond)
+            do(self.ema_model, '_ema', use_xstart=True, save_real=True, cond=cond)
 
     def evaluate_scores(self):
         """
@@ -409,8 +377,7 @@ class LitModel(pl.LightningModule):
                                  )
 
             if self.global_rank == 0:
-                self.logger.experiment.add_scalar(f'FID{postfix}', score,
-                                                  self.num_samples)
+                self.logger.experiment.add_scalar(f'FID{postfix}', score, self.num_samples)
                 if not os.path.exists(self.conf.logdir):
                     os.makedirs(self.conf.logdir)
                 with open(os.path.join(self.conf.logdir, 'eval.txt'),
@@ -436,6 +403,15 @@ class LitModel(pl.LightningModule):
                     for key, val in score.items():
                         self.logger.experiment.add_scalar(
                             f'{key}{postfix}', val, self.num_samples)
+                if not os.path.exists(self.conf.logdir):
+                    os.makedirs(self.conf.logdir)
+                with open(os.path.join(self.conf.logdir, 'eval.txt'),
+                        'a') as f:
+                    metrics = {
+                        f'LPIPS{postfix}': score,
+                        'num_samples': self.num_samples,
+                    }
+                    f.write(json.dumps(metrics) + "\n")
 
         if self.conf.eval_every_samples > 0 and self.num_samples > 0 and is_time(
                 self.num_samples, self.conf.eval_every_samples,
@@ -456,19 +432,37 @@ class LitModel(pl.LightningModule):
         out = {}
         if self.conf.optimizer == OptimizerType.adam:
             optim = torch.optim.Adam(self.model.parameters(),
-                                     lr=self.conf.lr,
-                                     weight_decay=self.conf.weight_decay)
+                                    lr=self.conf.lr,
+                                    weight_decay=self.conf.weight_decay)
         elif self.conf.optimizer == OptimizerType.adamw:
             optim = torch.optim.AdamW(self.model.parameters(),
-                                      lr=self.conf.lr,
-                                      weight_decay=self.conf.weight_decay)
+                                    lr=self.conf.lr,
+                                    betas=(0.9, 0.99),
+                                    eps=1e-06,
+                                    weight_decay=self.conf.weight_decay)
+        elif self.conf.optimizer == OptimizerType.lion:
+            from lion_pytorch import Lion
+            optim = Lion(self.model.parameters(), 
+                                    lr=self.conf.lr, 
+                                    betas=(0.95, 0.98),
+                                    weight_decay=self.conf.weight_decay)
         else:
             raise NotImplementedError()
+            
         out['optimizer'] = optim
-        if self.conf.warmup > 0:
+
+        if self.conf.optimizer == OptimizerType.lion:
+            from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
+            sched = CosineAnnealingWarmRestarts(
+                optim,
+                T_0=20_000,  # Restart every k steps
+                T_mult=2,  # Increase restart interval after each cycle
+                eta_min=1e-6  # Minimum learning rate
+            )
+        elif self.conf.warmup > 0:
             sched = torch.optim.lr_scheduler.LambdaLR(optim,
                                                       lr_lambda=WarmupLR(
-                                                          self.conf.warmup))
+                                                      self.conf.warmup))
             out['lr_scheduler'] = {
                 'scheduler': sched,
                 'interval': 'step',
@@ -525,7 +519,7 @@ class LitModel(pl.LightningModule):
 
                 conf = self.conf.clone()
                 conf.eval_num_images = 50_000
-                score = evaluate_fid(
+                score_gen, score_rec = evaluate_fid(
                     sampler,
                     self.ema_model,
                     conf,
@@ -538,7 +532,8 @@ class LitModel(pl.LightningModule):
                     #clip_latent_noise=clip_latent_noise,
                 )
 
-                self.log(f'fid_ema_T{T}', score)
+                self.log(f'fid_ema_T{T}_gen', score_gen)
+                self.log(f'fid_ema_T{T}_rec', score_rec)
 
         """
         "recon<T>" = reconstruction & autoencoding (without noise inversion)
