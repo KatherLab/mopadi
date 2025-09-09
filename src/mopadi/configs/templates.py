@@ -70,6 +70,7 @@ def default_autoenc(config):
     autoenc_config = config.get('autoenc_model', {})
 
     conf.data_dirs = list(data_config.get('data_dirs', None))
+    conf.feature_dirs = list(data_config.get('feature_dirs', None))
     conf.test_patients_file_path = data_config.get('test_patients_file_path', None)
     conf.process_only_zips = data_config.get('process_only_zips', False)
     conf.cache_pickle_tiles_path = data_config.get('cache_pickle_tiles_path', None)
@@ -82,6 +83,7 @@ def default_autoenc(config):
     conf.do_resize = data_config.get('do_resize', False)
 
     conf.img_size = autoenc_config.get('img_size', 224)
+    conf.sample_size = autoenc_config.get('sample_size', 32)
     conf.batch_size = autoenc_config.get('batch_size', 64)
     conf.batch_size_eval = autoenc_config.get('batch_size_eval', 64)
     conf.total_samples = autoenc_config.get('total_samples', 200_000_000)
@@ -91,7 +93,20 @@ def default_autoenc(config):
     conf.net_enc_channel_mult = tuple(autoenc_config.get('net_enc_channel_mult', (1, 1, 2, 2, 4, 4, 4)))
     conf.eval_every_samples = autoenc_config.get('eval_every_samples', 1_000_000)
     conf.eval_ema_every_samples = autoenc_config.get('eval_ema_every_samples', 1_000_000)
-    
+
+    conf.optimizer = autoenc_config.get('optimizer', 'adam')
+    if conf.optimizer == 'adam':
+        conf.optimizer = OptimizerType.adam
+    elif conf.optimizer == 'lion':
+        conf.optimizer = OptimizerType.lion
+    elif conf.optimizer == 'adamw':
+        conf.optimizer = OptimizerType.adamw
+
+    conf.feat_extractor = autoenc_config.get('foundation_model', None)
+    conf.feat_dim = autoenc_config.get('feat_dim', 512)  # should be determined automatically?
+    conf.feat_loss = autoenc_config.get('feat_loss', False)
+    conf.lambda_feat = autoenc_config.get('lambda_feat', 0.3)
+
     conf.name = 'autoenc'
     conf.make_model_conf()
     return conf

@@ -1,13 +1,12 @@
 # The order of training mopadi models: 
-# autoencoder -> latent DPM (optional, for unconditional synthetic image generation) -> linear classifier or MIL classifier
+# autoencoder -> latent DPM (optional, for unconditional synthetic image generation) -> MIL classifier
 
 # After all the steps, the resulting folder structure will look like this:
 # checkpoints/
 # └── experiment_name/                         # base_dir
 #     ├── autoenc/                             # Autoencoder output
 #     ├── latent_dpm/                          # Latent DPM (optional)
-#     ├── linear_clf_TARGET_label/             # Linear classifier (option 1)
-#     ├── mil_classifier_TARGET_label/         # MIL classifier (option 2)
+#     ├── mil_classifier_TARGET_label/         # MIL classifier
 #     │   ├── crossval/                        # Cross-validation results (optional)
 #     │   │   ├── fold_0/
 #     │   │   ├── ...
@@ -28,9 +27,12 @@ base_dir: checkpoints/experiment_name
 data:
   # Necessary for the autoencoder (step 1), latent DPM training (optional step 2) and linear classifier (step 3 [option 1]), the starting point forthe MIL classifier (step 3 [option 2]) is already extracted features
   # Directories containing tiles; can be multiple cohorts; by default will get all files with any of these extensions: ['.jpg', '.jpeg', '.png', '.tif', '.tiff']
-  data_dirs:
+  image_dirs:
     - /path/to/tiles/folder
-    #- /path/to/anothet/tiles/folder
+    #- /path/to/another/tiles/folder
+
+  feature_dirs:
+    - /path/to/folder/with/h5/feature/files
 
   # Optional, will not use these patients for training the autoencoder or will only use them if split is 'test'
   # For an example of such file, please check datasets/patient_splits/TCGA_CRC_test_split.json
@@ -92,21 +94,6 @@ latent_dpm:
 
   #batch_size: 124
   #batch_size_eval: 32
-
-
-# STEP 3 (OPTION 1): LINEAR CLASSIFIER (needed for the manipulation of images)
-linear_classifier:
-    target: TARGET   # needed only for the folder name; training targets will be inferred from the attr_path
-    classes: 
-        - class1
-        - class2
-        - class3
-    attr_path: /path/to/ground_truth.csv
-    batch_size: 32
-    lr: 1e-3
-    total_samples: 300000
-    use_pretrained_clf: false  # If true, will use the pretrained classifier and Texture (NCT100k) autoenc from Hugging Face
-    #feats_infer_path: /path/to/features/folder  # if not specified, will use the autoencoder output folder, only needed if it's downloaded from Hugging Face
 
 
 # STEP 3 (OPTION 2): MIL CLASSIFIER (needed for the manipulation of images)

@@ -1,24 +1,26 @@
-import os
+import os, re, io
 from io import BytesIO
 from pathlib import Path
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from PIL import Image
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, IterableDataset
 from torchvision import transforms
 import torch
 import glob
 from tqdm import tqdm
 import pandas as pd
 import numpy as np
-import os
 from mopadi.utils.dist_utils import *
 from dotenv import load_dotenv
-import re
 import pickle
 import json
 import zipfile
 import random
 import hashlib
+import h5py
+import webdataset as wds
+from typing import Dict, Optional, Tuple, List, Union
+from torch.utils.data._utils.collate import default_collate
 
 load_dotenv()
 ws_path = os.getenv('WORKSPACE_PATH')
@@ -84,9 +86,10 @@ def load_test_patients(test_patients_file):
 
 
 def get_tiles_from_zip(zip_path):
-    """Extract .jpg tile names from a ZIP file."""
+    """Extract tile names from a ZIP file."""
+    exts = ('.jpg', '.jpeg', '.png', '.tif', '.tiff')
     with zipfile.ZipFile(zip_path, 'r') as zf:
-        return [name for name in zf.namelist() if name.endswith('.jpg')]
+        return [name for name in zf.namelist() if name.lower().endswith(exts)]
 
 
 def load_or_calculate_cohort_sizes(root_dirs, process_only_zips, cache_file, force_recalculate=False):
@@ -122,7 +125,7 @@ def load_or_calculate_cohort_sizes(root_dirs, process_only_zips, cache_file, for
         for patient_folder in tqdm(os.listdir(root_dir)):
             patient_path = os.path.join(root_dir, patient_folder)
 
-            if process_only_zips and patient_folder.endswith('.zip'):
+            if process_only_zips and patient_folder.lower().endswith('.zip'):
                 num_tiles = len(get_tiles_from_zip(patient_path))
                 wsi_count+=1
             elif os.path.isdir(patient_path) and not process_only_zips:
@@ -244,7 +247,7 @@ def extract_coords(filename):
     Extract (x, y) coordinates from filename.
     Example: 'tile_(1024.9512, 12811.89).jpg' → (1024.9512, 12811.89)
     """
-    match = re.search(r'tile_\(([\d.]+), ([\d.]+)\)\.jpg', filename)
+    match = re.search(r'tile_\(([\d.]+), ([\d.]+)\)\.\w+$', filename)
     if match:
         return np.array([float(match.group(1)), float(match.group(2))], dtype=np.float32)
     # Return a dummy array, not None to avoid errors when creating batches
@@ -301,6 +304,7 @@ class DefaultTilesDataset(TilesDataset):
         if as_tensor:
             transform_list.append(transforms.ToTensor())
         if do_normalize:
+                # this transform is needed for diffusion only, FMs expect different preprocessing
                 transform_list.append(transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)))
         if transform_list:
             self.transform = transforms.Compose(transform_list)
@@ -352,10 +356,11 @@ class DefaultTilesDataset(TilesDataset):
 class ImageTileDatasetWithFeatures(DefaultTilesDataset):
     def __init__(self, 
                 root_dirs: list, 
-                features_dirs: list,
+                feature_dirs: list,
                 test_patients_file: str = None,
                 split: str = 'none',
                 max_tiles_per_patient: int = None,
+                cohort_size_threshold: int = 1_400_000,
                 feat_extractor: str = 'conch',
                 as_tensor: bool = True,
                 do_normalize: bool = True,
@@ -363,8 +368,17 @@ class ImageTileDatasetWithFeatures(DefaultTilesDataset):
                 process_only_zips: bool = False,
                 cache_pickle_tiles_path: str = None,
     ):
-        super().__init__(root_dirs=root_dirs, test_patients_file=test_patients_file, split=split, max_tiles_per_patient=max_tiles_per_patient, process_only_zips=process_only_zips, cache_pickle_tiles_path=cache_pickle_tiles_path)
-        self.features_dirs = features_dirs
+        super().__init__(root_dirs=root_dirs, test_patients_file=test_patients_file, split=split, max_tiles_per_patient=max_tiles_per_patient, cohort_size_threshold=cohort_size_threshold, process_only_zips=process_only_zips, cache_pickle_tiles_path=cache_pickle_tiles_path)
+        self.feature_dirs = feature_dirs
+        print("-----Dataset parameters-----")
+        print(f"Image directories: {root_dirs}")
+        print(f"Feature directories: {feature_dirs}")
+        print(f"Feature extractor: {feat_extractor}")
+        print(f"Only zipped tiles will be processed: {process_only_zips}")
+        print(f"Tile paths will be loaded from (if pkl file exists) or saved to: {cache_pickle_tiles_path} to save scanning folders time.")
+        print(f"Dataset split: {split}")
+        print(f"Maximum tiles per patient: {max_tiles_per_patient}")
+        print(f"Cohort size threshold after which limit the number of tiles: {cohort_size_threshold}")
 
         transform_list = []
         if do_resize:
@@ -404,14 +418,19 @@ class ImageTileDatasetWithFeatures(DefaultTilesDataset):
             patient_id = '.'.join(os.path.basename(os.path.dirname(tile_path)).split('.')[:2])
 
         tile_coords = extract_coords(tile_path)
-        cohort = os.path.basename(os.path.dirname(os.path.dirname(tile_path)))   # works only if not zip?
+        
+        if ".zip:" in tile_path:
+            zip_path, internal_path = tile_path.split(":", 1)
+            cohort = os.path.basename(os.path.dirname(zip_path))
+        else:
+            cohort = os.path.basename(os.path.dirname(os.path.dirname(tile_path)))
 
         found = False
-        for features_dir in self.features_dirs:
-            if cohort not in features_dir:
+        for feature_dir in self.feature_dirs:
+            if cohort not in feature_dir:
                 continue
 
-            feat_path = os.path.join(features_dir, f"{patient_id}.h5")
+            feat_path = os.path.join(feature_dir, f"{patient_id}.h5")
             with h5py.File(feat_path, 'r') as f:
                 features = torch.tensor(f['feats'][:])
                 coords = np.array(f["coords"][:])
@@ -422,7 +441,7 @@ class ImageTileDatasetWithFeatures(DefaultTilesDataset):
 
                 if match_idx is None:
                 #if len(match_idx) == 0:
-                    print(f'Feats not found for patient {patient_id} tile {tile_coords}')
+                    raise KeyError(f"Feats not found for {patient_id} tile {tile_coords}")
                 #elif len(match_idx) > 1:
                 #    print(f'Weirdly multiple feats found (N = {len(match_idx)}) for patient {patient_id} tile {tile_coords}')
                 else:
@@ -506,3 +525,239 @@ class DefaultAttrDataset(Dataset):
         labels = torch.tensor([row.get(cls, 0) for cls in self.id_to_cls], dtype=torch.float32)
         item['labels'] = labels
         return item
+
+
+def split_key(key: str) -> Tuple[str, str, str]:
+    """
+    Our tar keys are 'cohort/patient/stem'.
+    This splits robustly even if the key has prefixes.
+    """
+    parts = key.split("/")
+    if len(parts) < 3:
+        # fallback: pad missing
+        return ("", "", parts[-1])
+    return parts[-3], parts[-2], parts[-1]
+
+def parse_coords_from_stem(stem: str, regex: str) -> Optional[Tuple[int, int]]:
+    """
+    Parse coords from a filename stem using a regex with two groups.
+    Examples:
+      r"_x(\\d+)_y(\\d+)"  or  r"tile_\\(([-\\d.]+),\\s*([-\\d.]+)\\)"
+    Returns a tuple (x, y) as ints if possible; falls back to rounding floats.
+    """
+    m = re.search(regex, stem)
+    if not m:
+        return None
+    g1, g2 = m.groups()[:2]
+    try:
+        return (int(g1), int(g2))
+    except ValueError:
+        # if floats, round to int for index consistency with many h5s
+        return (int(round(float(g1))), int(round(float(g2))))
+
+def build_transform(do_resize: bool, img_size: int, as_tensor: bool, do_normalize: bool):
+    t: List[transforms.Compose] = []
+    if do_resize:
+        t.append(transforms.Resize(size=img_size, interpolation=transforms.InterpolationMode.BILINEAR))
+    if as_tensor:
+        t.append(transforms.ToTensor())
+    if do_normalize:
+        # diffusion normalization ([-1,1])
+        t.append(transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)))
+    return transforms.Compose(t) if t else None
+
+def dict_collate(samples: List[Dict]) -> Dict:
+    """
+    Collate list of dict samples into dict of tensors. Leaves strings as lists.
+    """
+    if not samples:
+        return {}
+    out: Dict[str, Union[torch.Tensor, List]] = {}
+    keys = samples[0].keys()
+    for k in keys:
+        vals = [s[k] for s in samples]
+        if isinstance(vals[0], torch.Tensor):
+            out[k] = default_collate(vals)
+        else:
+            out[k] = vals
+    return out
+
+def _base_wds_pipeline(
+    shards: Union[str, List[str]],
+    shardshuffle: bool = True,
+    resampled: bool = True,
+    nodesplitter=wds.split_by_node,
+    pre_decode_shuffle: int = 10_000,
+):
+    """
+    Common starting pipeline for WebDataset.
+    """
+    ds = wds.WebDataset(
+        shards,
+        shardshuffle=shardshuffle,
+        resampled=resampled,
+        nodesplitter=nodesplitter,
+        handler=wds.handlers.warn_and_continue,
+    )
+    if pre_decode_shuffle and pre_decode_shuffle > 0:
+        ds = ds.shuffle(pre_decode_shuffle)
+    # we stored images under the "png" stream key (Image bytes may still be JPEG; PIL handles it)
+    ds = ds.decode("pil")  # -> sample["png"] is a PIL.Image
+    return ds
+
+
+class H5PatientCache:
+    """
+    LRU-ish cache that loads one patient's h5 once and keeps:
+      - feats: torch.FloatTensor (N, D)
+      - index: { (x,y): idx }
+    """
+    def __init__(self, max_items: int = 8, feat_key: str = "feats", coords_key: str = "coords"):
+        self.max_items = max_items
+        self.feat_key = feat_key
+        self.coords_key = coords_key
+        self.cache: "OrderedDict[str, Dict]" = OrderedDict()
+
+    def get(self, h5_path: str, feat_key: Optional[str] = None, coords_key: Optional[str] = None) -> Dict:
+        feat_key = feat_key or self.feat_key
+        coords_key = coords_key or self.coords_key
+        if h5_path in self.cache:
+            self.cache.move_to_end(h5_path)
+            return self.cache[h5_path]
+
+        with h5py.File(h5_path, "r") as f:
+            feats = torch.from_numpy(f[feat_key][:])  # (N,D)
+            coords = f[coords_key][:]
+        index = { (int(x), int(y)) : i for i, (x, y) in enumerate(coords) }
+        payload = {"feats": feats, "index": index}
+
+        self.cache[h5_path] = payload
+        if len(self.cache) > self.max_items:
+            self.cache.popitem(last=False)  # evict LRU
+        return payload
+
+
+class WDSTiles(IterableDataset):
+    """
+    Streaming tiles from WebDataset shards.
+    Yields dict with: img (Tensor), coords (Tensor[2]), filename (str), patient (str), cohort (str), key (str)
+    Use .to_loader(...) to obtain a WebLoader (DataLoader-like).
+    """
+    def __init__(
+        self,
+        shards: Union[str, List[str]],
+        *,
+        do_resize: bool = True,
+        img_size: int = 224,
+        as_tensor: bool = True,
+        do_normalize: bool = True,
+        coords_regex: str = r"_x(\d+)_y(\d+)",
+        pre_shuffle: int = 10_000,
+        post_shuffle: int = 1024,
+    ):
+        super().__init__()
+        self.shards = shards
+        self.transform = build_transform(do_resize, img_size, as_tensor, do_normalize)
+        self.coords_regex = coords_regex
+        self.pre_shuffle = pre_shuffle
+        self.post_shuffle = post_shuffle
+
+    # build the streaming pipeline (unbatched)
+    def pipeline(self):
+        def mapper(sample):
+            key = sample["__key__"]                      # "cohort/patient/stem"
+            cohort, patient, stem = split_key(key)
+            img_pil: Image.Image = sample["png"]         # PIL (from .decode("pil"))
+            img = self.transform(img_pil) if self.transform is not None else transforms.ToTensor()(img_pil)
+
+            coords = parse_coords_from_stem(stem, self.coords_regex) or (-1, -1)
+            return {
+                "img": img,                                 # Tensor CxHxW (normalized if requested)
+                "coords": torch.tensor(coords, dtype=torch.long),
+                "filename": f"{stem}.png",
+                "patient": patient,
+                "cohort": cohort,
+                "key": key,
+            }
+
+        ds = _base_wds_pipeline(
+            self.shards, shardshuffle=True, resampled=True,
+            pre_decode_shuffle=self.pre_shuffle
+        ).map(mapper, handler=wds.handlers.warn_and_continue)
+
+        if self.post_shuffle and self.post_shuffle > 0:
+            ds = ds.shuffle(self.post_shuffle)
+        return ds
+
+    def __iter__(self):
+        # return unbatched samples
+        yield from self.pipeline()
+
+    def to_loader(self, batch_size: int, num_workers: int, steps_per_epoch: Optional[int] = None):
+        ds = self.pipeline().batched(batch_size, partial=False).map(dict_collate)
+        loader = wds.WebLoader(
+            ds,
+            batch_size=None,                 # already batched
+            num_workers=num_workers,
+            pin_memory=True,
+            persistent_workers=num_workers > 0,
+        )
+        return loader.with_epoch(steps_per_epoch) if steps_per_epoch else loader
+
+# ---------- class: images + precomputed features
+
+class WDSTilesWithFeatures(WDSTiles):
+    """
+    Streaming tiles with H5 features per patient.
+    `feature_dirs` can be either:
+      - dict: {"BRCA": "/path/to/brca_h5", "LUAD": "/path/to/luad_h5", ...}
+      - list[str]: we will pick the first dir whose path contains the cohort name
+    """
+    def __init__(
+        self,
+        shards: Union[str, List[str]],
+        feature_dirs: Union[Dict[str, str], List[str]],
+        *,
+        feat_key: str = "feats",
+        coords_key: str = "coords",
+        h5_cache_items: int = 8,
+        **kwargs,
+    ):
+        super().__init__(shards, **kwargs)
+        self.feature_dirs = feature_dirs
+        self.feat_key = feat_key
+        self.coords_key = coords_key
+        self.cache = H5PatientCache(max_items=h5_cache_items, feat_key=feat_key, coords_key=coords_key)
+
+    def _resolve_feat_dir(self, cohort: str) -> Optional[str]:
+        if isinstance(self.feature_dirs, dict):
+            return self.feature_dirs.get(cohort)
+        # list fallback: choose first that contains cohort in its path
+        for d in self.feature_dirs:
+            if cohort in d:
+                return d
+        return None
+
+    def pipeline(self):
+        base = super().pipeline()
+
+        def add_features(sample):
+            cohort = sample["cohort"]
+            patient = sample["patient"]
+            coords_tuple = tuple(int(v) for v in sample["coords"].tolist())
+
+            feat_dir = self._resolve_feat_dir(cohort)
+            if feat_dir is None:
+                raise FileNotFoundError(f"No feature dir configured for cohort '{cohort}'")
+
+            h5_path = os.path.join(feat_dir, f"{patient}.h5")
+            payload = self.cache.get(h5_path, feat_key=self.feat_key, coords_key=self.coords_key)
+
+            idx = payload["index"].get(coords_tuple)
+            if idx is None:
+                raise KeyError(f"coords {coords_tuple} not found in {h5_path}")
+
+            sample["feat"] = payload["feats"][idx]
+            return sample
+
+        return base.map(add_features, handler=wds.handlers.warn_and_continue)

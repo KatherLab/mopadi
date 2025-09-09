@@ -5,19 +5,20 @@ https://github.com/hojonathanho/diffusion/blob/1e0dceb3b3495bbe19116a5e1b3596cd0
 Docstrings have been added, as well as DDIM sampling and a new collection of beta schedules.
 """
 
-from mopadi.model.unet_autoenc import AutoencReturn
-from mopadi.configs.config_base import BaseConfig
+from model.unet_autoenc import AutoencReturn
+from configs.config_base import BaseConfig
 import enum
 import math
 
 import numpy as np
 import torch as th
-from mopadi.model import *
-from mopadi.model.nn import mean_flat
+from model import *
+from model.nn import mean_flat
 from typing import NamedTuple, Tuple
-from mopadi.configs.choices import *
+from configs.choices import *
 from torch.amp import autocast
 import torch.nn.functional as F
+import lpips
 
 from dataclasses import dataclass
 
@@ -33,6 +34,8 @@ class GaussianDiffusionBeatGansConfig(BaseConfig):
     rescale_timesteps: bool
     fp16: bool
     train_pred_xstart_detach: bool = True
+    feat_loss: bool = False
+    lambda_feat: float = 0.5
 
     def make_sampler(self):
         return GaussianDiffusionBeatGans(self)
@@ -100,6 +103,7 @@ class GaussianDiffusionBeatGans:
     def training_losses(self,
                         model: Model,
                         x_start: th.Tensor,
+                        cond: th.Tensor,
                         t: th.Tensor,
                         model_kwargs=None,
                         noise: th.Tensor = None):
@@ -115,6 +119,8 @@ class GaussianDiffusionBeatGans:
         :return: a dict with the key "loss" containing a tensor of shape [N].
                  Some mean or variance settings may also have other keys.
         """
+        device = next(model.parameters()).device
+
         if model_kwargs is None:
             model_kwargs = {}
         if noise is None:
@@ -127,7 +133,7 @@ class GaussianDiffusionBeatGans:
         if self.loss_type in [
                 LossType.mse,
                 LossType.l1,
-        ]:          
+        ]:
             with autocast(device_type='cuda', enabled=self.conf.fp16):
                 # x_t is static wrt. to the diffusion process
                 model_forward = model.forward(x=x_t.detach(),
@@ -136,16 +142,15 @@ class GaussianDiffusionBeatGans:
                                               **model_kwargs)
             model_output = model_forward.pred
 
-            _model_output = model_output
-            if self.conf.train_pred_xstart_detach:
-                _model_output = _model_output.detach()
+            _model_output = model_output if self.conf.feat_loss else (
+                model_output if not self.conf.train_pred_xstart_detach else model_output.detach()
+            )
             # get the pred xstart
             p_mean_var = self.p_mean_variance(
                 model=DummyModel(pred=_model_output),
                 # gradient goes through x_t
-                x=x_t,
-                t=t,
-                clip_denoised=False)
+                x=x_t, t=t, clip_denoised=False
+                )
             terms['pred_xstart'] = p_mean_var['pred_xstart']
 
             # model_output = model(x_t, self._scale_timesteps(t), **model_kwargs)
@@ -160,19 +165,52 @@ class GaussianDiffusionBeatGans:
                 if self.model_mean_type == ModelMeanType.eps:
                     # (n, c, h, w) => (n, )
                     terms["mse"] = mean_flat((target - model_output)**2)
+                    base_loss = terms["mse"]
                 else:
                     raise NotImplementedError()
             elif self.loss_type == LossType.l1:
                 # (n, c, h, w) => (n, )
-                terms["mse"] = mean_flat((target - model_output).abs())
+                terms["l1"] = mean_flat((target - model_output).abs())
+                base_loss = terms["l1"]
             else:
                 raise NotImplementedError()
 
-            if "vb" in terms:
-                # if learning the variance also use the vlb loss
-                terms["loss"] = terms["mse"] + terms["vb"]
+            def cosine_similarity_loss(feats_recon, feats_ori):
+                similarity = F.cosine_similarity(feats_recon, feats_ori, dim=1)
+                loss = 1 - similarity.mean()
+                return loss
+            
+            total_loss = base_loss
+
+            # Feature Loss - compare features from the original & reconstructed image
+            if self.conf.feat_loss:
+                pred_xstart_denorm = ((terms['pred_xstart'] + 1) / 2).clamp(0, 1)
+                extractor = getattr(model, "feature_extractor", None)
+                assert extractor is not None, "feature_extractor missing on model"
+                feats_recon = extractor.extract_feats(pred_xstart_denorm, need_grad=True)
+
+                #feature_loss = nn.MSELoss()(feats_recon, cond)
+                feature_loss = cosine_similarity_loss(feats_recon, cond)
+                terms["feature_loss"] = feature_loss
+
+                #print(f"Base loss: {base_loss.mean().item()}, Feature loss: {feature_loss.mean().item()}")
+                total_loss += self.conf.lambda_feat * feature_loss
+
+                terms["loss"] = total_loss
+
+            #elif self.conf.lpips_loss:
+            #    lpips_loss_fn = lpips.LPIPS(net='alex').to(device)
+                
+            #    pred_xstart_denorm = (terms['pred_xstart'] + 1) / 2
+            #    x_start_denorm = (x_start + 1) / 2
+            #    lpips_loss = lpips_loss_fn(pred_xstart_denorm, x_start_denorm).mean()
+            #    terms["lpips_loss"] = lpips_loss
+            #    total_loss += self.conf.lambda_lpips * lpips_loss
+            #    terms["loss"] = total_loss
+
             else:
-                terms["loss"] = terms["mse"]
+                terms["loss"] = base_loss
+
         else:
             raise NotImplementedError(self.loss_type)
 

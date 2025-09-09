@@ -17,6 +17,8 @@ import torch
 from torch.amp import autocast
 from torch.optim.optimizer import Optimizer
 from torch.utils.data.dataset import TensorDataset
+from torch.utils.data import DataLoader
+from torch.optim.lr_scheduler import SequentialLR, LambdaLR, CosineAnnealingWarmRestarts, CosineAnnealingLR
 from torchvision.utils import make_grid, save_image
 
 from mopadi.configs.config import *
@@ -25,6 +27,10 @@ from mopadi.utils.dist_utils import *
 from mopadi.utils.metrics import *
 from mopadi.utils.renderer import *
 from mopadi.utils.misc import *
+from mopadi.model.extractor import (
+    FeatureExtractorConch, FeatureExtractorConch15,
+    FeatureExtractorVirchow2, FeatureExtractorUNI2
+)
 
 torch.set_float32_matmul_precision('medium')
 
@@ -83,35 +89,6 @@ class LitModel(pl.LightningModule):
             self.conds_mean = None
             self.conds_std = None
 
-    #def normalize(self, cond):
-    #    cond = (cond - self.conds_mean.to(self.device)) / self.conds_std.to(
-    #        self.device)
-    #    return cond
-
-    #def denormalize(self, cond):
-    #    cond = (cond * self.conds_std.to(self.device)) + self.conds_mean.to(
-    #        self.device)
-    #    return cond
-
-    def sample(self, N, device, T=None):
-        """Not possible for current set up"""
-        if T is None:
-            sampler = self.eval_sampler
-        else:
-            sampler = self.conf._make_diffusion_conf(T).make_sampler()
-
-        noise = torch.randn(N, 3, self.conf.img_size, self.conf.img_size, device=device)
-        features = self.encode(noise)  
-        pred_img = render_condition(
-            self.conf,
-            self.ema_model,
-            x_T=noise,
-            sampler=sampler,
-            cond=features,
-        )
-        pred_img = (pred_img + 1) / 2   # normalize to [0, 1] range
-        return pred_img
-
     def render(self, noise, cond, T=None):
         if T is None:
             sampler = self.eval_sampler
@@ -136,17 +113,6 @@ class LitModel(pl.LightningModule):
                                                x,
                                                model_kwargs={'cond': cond})
         return out['sample']
-
-    def forward(self, noise=None, x_start=None, ema_model: bool = False):
-        with autocast(device_type='cuda', enabled=False):
-            if ema_model:
-                model = self.ema_model
-            else:
-                model = self.model
-            gen = self.eval_sampler.sample(model=model,
-                                           noise=noise,
-                                           x_start=x_start)
-            return gen
 
     def setup(self, stage=None) -> None:
         """
@@ -178,6 +144,37 @@ class LitModel(pl.LightningModule):
 
         self.model.feature_extractor = self.feature_extractor
         self.ema_model.feature_extractor = self.feature_extractor
+
+    def on_fit_start(self):
+        # Make sure the extractor is on the same device as the model
+        if self.feature_extractor is not None:
+            if hasattr(self.feature_extractor, "model"):
+                self.feature_extractor.model = self.feature_extractor.model.to(self.device)
+            if hasattr(self.feature_extractor, "device"):
+                self.feature_extractor.device = self.device
+        # reattach in case of rewraps
+        self.model.feature_extractor = self.feature_extractor
+        self.ema_model.feature_extractor = self.feature_extractor
+
+        if not self.conf.load_pretrained_autoenc:
+            print("\n=== SANITY CHECK: Checking first batch from DataLoader ===")
+            dl = self.train_dataloader()
+            batch = next(iter(dl))
+            if isinstance(batch, dict):
+                for k, v in batch.items():
+                    print(f"  {k}: shape={getattr(v, 'shape', None)}, dtype={getattr(v, 'dtype', None)}")
+            elif isinstance(batch, (tuple, list)):
+                print("  tuple/list:", [getattr(b, 'shape', None) for b in batch])
+            else:
+                print("  type:", type(batch))
+
+            if 'coords' in batch:
+                coords = batch['coords'] 
+                if (coords == -1).all(dim=1).any():
+                    print("[WARNING] Some or all filenames do not contain coordinates (or they were not extracted correctly)! Using dummy value [-1, -1] for tiles without coords.")
+            print("=== END SANITY CHECK ===\n")
+
+            self.sanity_check_precomputed_feats(n_batches=1)
 
     def train_dataloader(self):
         """
@@ -234,7 +231,7 @@ class LitModel(pl.LightningModule):
                 Main training mode for diffusion models (using precomputed features).
                 """
                 # with numpy seed we have the problem that the sample t's are related!
-                t, weight = self.T_sampler.sample(len(imgs), imgs.device)
+                t, _ = self.T_sampler.sample(len(imgs), imgs.device)
                 losses = self.sampler.training_losses(
                     model=self.model, 
                     x_start=imgs,
@@ -292,35 +289,44 @@ class LitModel(pl.LightningModule):
         """
         put images to the tensorboard
         """
-        def do(model,
-               postfix,
-               use_xstart,
-               save_real=False,
-               cond=None):
+        def do(model, postfix, use_xstart, save_real=False, cond=None):
 
             model.eval()
 
             with torch.no_grad():
                 all_x_T = self.split_tensor(self.x_T)
+
+                if use_xstart:
+                    all_x_T = all_x_T[:len(x_start)]
+
                 batch_size = min(len(all_x_T), self.conf.batch_size_eval)
                 # allow for superlarge models
                 loader = DataLoader(all_x_T, batch_size=batch_size)
 
-                Gen = []
+                Gen, Reals = [], []
+                offset = 0
+
                 for x_T in loader:
+                    n = x_T.size(0)
                     if use_xstart:
-                        _xstart = x_start[:len(x_T)]
+                        _xstart = x_start[offset: offset + n]
+                        _cond = cond[offset: offset + n] if cond is not None else None
+                        offset += n
                     else:
                         _xstart = None
+                        _cond = cond
 
                     if _xstart is not None:
                         assert cond is not None, "Features missing for a given xstart img"
 
                     gen = self.eval_sampler.sample(model=model,
                                                     noise=x_T,
-                                                    cond=cond,
+                                                    cond=_cond,
                                                     x_start=_xstart)
                     Gen.append(gen)
+
+                    if save_real and use_xstart:
+                        Reals.append(_xstart)
 
                 gen = torch.cat(Gen)
                 gen = self.all_gather(gen)
@@ -330,7 +336,8 @@ class LitModel(pl.LightningModule):
 
                 if save_real and use_xstart:
                     # save the original images to the tensorboard
-                    real = self.all_gather(_xstart)
+                    real = torch.cat(Reals, dim=0)
+                    real = self.all_gather(real)
                     if real.dim() == 5:
                         real = real.flatten(0, 1)
 
@@ -339,7 +346,7 @@ class LitModel(pl.LightningModule):
                         sample_dir = os.path.join(self.conf.logdir, f'sample_real{postfix}')
                         if not os.path.exists(sample_dir):
                             os.makedirs(sample_dir)
-                        path = os.path.join(sample_dir, '%d.png' % self.num_samples)
+                        path = os.path.join(sample_dir, f'{self.num_samples}.png')
                         save_image(grid_real, path)
                         self.logger.experiment.add_image(f'sample{postfix}/real', grid_real, self.num_samples)
 
@@ -451,23 +458,96 @@ class LitModel(pl.LightningModule):
             
         out['optimizer'] = optim
 
+        sched = None
         if self.conf.optimizer == OptimizerType.lion:
-            from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
-            sched = CosineAnnealingWarmRestarts(
+            cosine = CosineAnnealingWarmRestarts(
                 optim,
-                T_0=20_000,  # Restart every k steps
-                T_mult=2,  # Increase restart interval after each cycle
-                eta_min=1e-6  # Minimum learning rate
+                T_0=20_000,     # in steps since we set interval='step'
+                T_mult=2,
+                eta_min=1e-6
             )
-        elif self.conf.warmup > 0:
-            sched = torch.optim.lr_scheduler.LambdaLR(optim,
-                                                      lr_lambda=WarmupLR(
-                                                      self.conf.warmup))
-            out['lr_scheduler'] = {
-                'scheduler': sched,
-                'interval': 'step',
-            }
+            if self.conf.warmup > 0:
+                # warmup for Lion, then cosine
+                warmup = LambdaLR(optim, lr_lambda=lambda s: min(s + 1, self.conf.warmup) / self.conf.warmup)
+                sched = SequentialLR(optim, schedulers=[warmup, cosine], milestones=[self.conf.warmup])
+            else:
+                sched = cosine
+        else:
+            # Adam / AdamW: warmup -> Cosine (no restarts)
+            total_steps = max(1, self.conf.total_samples // self.conf.batch_size_effective)
+            if self.conf.warmup > 0:
+                warmup = LambdaLR(optim, lr_lambda=lambda s: min(s + 1, self.conf.warmup) / self.conf.warmup)
+                cosine = CosineAnnealingLR(optim, T_max=max(1, total_steps - self.conf.warmup), eta_min=1e-6)
+                sched = SequentialLR(optim, schedulers=[warmup, cosine], milestones=[self.conf.warmup])
+            else:
+                cosine = CosineAnnealingLR(optim, T_max=total_steps, eta_min=1e-6)
+                sched = cosine
+
+        if sched is not None:
+            out["lr_scheduler"] = {"scheduler": sched, "interval": "step"}
+
         return out
+    
+    def sanity_check_precomputed_feats(
+        self,
+        n_batches: int = 1,
+        atol: float = 5e-4,          # absolute tolerance for MAE
+        cos_thresh: float = 0.999,   # min cosine similarity per-batch
+    ):
+        if get_rank() != 0:
+            return
+        
+        self.model.eval()
+        dl = self.train_dataloader()
+        it = iter(dl)
+
+        print("\n=== FEATURE SANITY CHECK ===")
+        bad = 0
+        with torch.no_grad():
+            for bi in range(n_batches):
+                try:
+                    batch = next(it)
+                except StopIteration:
+                    break
+
+                imgs = batch["img"].to(self.device)
+                feats_pre = batch["feat"].to(self.device).float()
+
+                # Bring images to [0,1] for the extractor
+                imgs01 = imgs
+                if imgs01.min() < -0.1:            # typically [-1,1]
+                    imgs01 = ((imgs01 + 1) / 2).clamp(0, 1)
+                elif imgs01.max() > 1.5:           # uint8 0..255
+                    imgs01 = (imgs01 / 255.0).clamp(0, 1)
+
+                feats_new = self.feature_extractor.extract_feats(imgs01, need_grad=False).float()
+
+                if feats_new.shape != feats_pre.shape:
+                    print(f"[FEAT SANITY] Shape mismatch: on-the-fly {tuple(feats_new.shape)} "
+                        f"vs precomputed {tuple(feats_pre.shape)}")
+                    bad += 1
+                    continue
+
+                mae = (feats_new - feats_pre).abs().mean().item()
+                maxe = (feats_new - feats_pre).abs().max().item()
+                cos = torch.nn.functional.cosine_similarity(feats_new, feats_pre, dim=1)
+                cos_mean = cos.mean().item()
+                cos_min = cos.min().item()
+
+                print(f"[FEAT SANITY] batch {bi}: MAE={mae:.3e}  MAX={maxe:.3e}  "
+                    f"COS(mean)={cos_mean:.6f}  COS(min)={cos_min:.6f}")
+
+                # Flag batch as bad if either numeric error is too large or cosine too low
+                if mae > atol or cos_min < cos_thresh:
+                    bad += 1
+
+        if bad == 0:
+            print("[FEAT SANITY] OK: precomputed and on-the-fly features match within tolerance.\n")
+        else:
+            print(f"[FEAT SANITY] WARNING: {bad} batch(es) exceeded thresholds. "
+                "Check extractor variant, resize, and normalization.\n")
+
+        self.model.train()
 
     def split_tensor(self, x):
         """
@@ -494,8 +574,6 @@ class LitModel(pl.LightningModule):
         We just want the multi-gpu support. 
         """
         # make sure you seed each worker differently!
-        self.setup()
-
         # it will run only one step!
         print('global step:', self.global_step)
 
@@ -506,8 +584,6 @@ class LitModel(pl.LightningModule):
         """
         for each in self.conf.eval_programs:
             if each.startswith('fid'):
-
-                m = re.match(r'fidclip\(([0-9]+),([0-9]+)\)', each)
 
                 # evalT
                 _, T = each.split('fid')
@@ -611,26 +687,6 @@ def is_time(num_samples, every, step_size):
 
 def train(conf: TrainConfig, gpus, nodes=1, mode: str = 'train'):
     model = LitModel(conf)
-
-    if not conf.load_pretrained_autoenc:
-        model.setup()
-
-        print("\n=== SANITY CHECK: Checking first batch from DataLoader ===")
-        dl = model.train_dataloader()
-        batch = next(iter(dl))
-        if isinstance(batch, dict):
-            for k, v in batch.items():
-                print(f"  {k}: shape={getattr(v, 'shape', None)}, dtype={getattr(v, 'dtype', None)}")
-        elif isinstance(batch, (tuple, list)):
-            print("  tuple/list:", [getattr(b, 'shape', None) for b in batch])
-        else:
-            print("  type:", type(batch))
-
-        if 'coords' in batch:
-            coords = batch['coords'] 
-            if (coords == -1).all(dim=1).any():
-                print("[WARNING] Some or all filenames do not contain coordinates (or they were not extracted correctly)! Using dummy value [-1, -1] for tiles without coords.")
-        print("=== END SANITY CHECK ===\n")
 
     if get_rank() == 0:  # Ensure only the main worker creates the directory
         if not os.path.exists(conf.logdir):
