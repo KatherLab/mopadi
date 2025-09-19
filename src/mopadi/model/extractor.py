@@ -1,7 +1,3 @@
-from dataclasses import dataclass
-from enum import Enum
-from typing import NamedTuple, Tuple
-
 import torch
 from transformers import AutoModel
 from torchvision import transforms
@@ -13,6 +9,14 @@ import os
 
 from mopadi.configs.choices import *
 
+# ignore the warning coming from conch
+import warnings
+warnings.filterwarnings(
+    "ignore",
+    message=r"Importing from timm\.models\.layers is deprecated, please import via timm\.layers",
+    category=FutureWarning,
+)
+
 load_dotenv()
 hf_token = os.getenv("HF_TOKEN")
 
@@ -23,13 +27,13 @@ class FeatureExtractorConch:
 
         self.model, self.transform = create_model_from_pretrained('conch_ViT-B-16', "hf_hub:MahmoodLab/conch")
         self.model.eval().to(device)
-        print(self.transform)
         self.device = device
 
         for p in self.model.parameters():
             p.requires_grad = False
 
         transform_list = [transforms.Resize(size=448, interpolation=transforms.InterpolationMode.BICUBIC, antialias=True),
+                          transforms.CenterCrop(size=(448,448)),
                           transforms.Normalize(mean=(0.48145466, 0.4578275, 0.40821073), std=(0.26862954, 0.26130258, 0.27577711))
         ]
         self.transform = transforms.Compose(transform_list)

@@ -5,22 +5,22 @@ https://github.com/hojonathanho/diffusion/blob/1e0dceb3b3495bbe19116a5e1b3596cd0
 Docstrings have been added, as well as DDIM sampling and a new collection of beta schedules.
 """
 
-from model.unet_autoenc import AutoencReturn
-from configs.config_base import BaseConfig
 import enum
 import math
-
 import numpy as np
-import torch as th
-from model import *
-from model.nn import mean_flat
+import lpips
 from typing import NamedTuple, Tuple
-from configs.choices import *
+from dataclasses import dataclass
+
+import torch as th
 from torch.amp import autocast
 import torch.nn.functional as F
-import lpips
 
-from dataclasses import dataclass
+from mopadi.model import *
+from mopadi.model.nn import mean_flat
+from mopadi.model.unet_autoenc import AutoencReturn
+from mopadi.configs.config_base import BaseConfig
+from mopadi.configs.choices import *
 
 
 @dataclass
@@ -119,7 +119,6 @@ class GaussianDiffusionBeatGans:
         :return: a dict with the key "loss" containing a tensor of shape [N].
                  Some mean or variance settings may also have other keys.
         """
-        device = next(model.parameters()).device
 
         if model_kwargs is None:
             model_kwargs = {}
@@ -185,8 +184,8 @@ class GaussianDiffusionBeatGans:
             # Feature Loss - compare features from the original & reconstructed image
             if self.conf.feat_loss:
                 pred_xstart_denorm = ((terms['pred_xstart'] + 1) / 2).clamp(0, 1)
-                extractor = getattr(model, "feature_extractor", None)
-                assert extractor is not None, "feature_extractor missing on model"
+                extractor = getattr(model, "feat_extractor", None)
+                assert extractor is not None, "feat_extractor missing on model"
                 feats_recon = extractor.extract_feats(pred_xstart_denorm, need_grad=True)
 
                 #feature_loss = nn.MSELoss()(feats_recon, cond)

@@ -23,7 +23,7 @@ class BeatGANsAutoencConfig(BeatGANsUNetConfig):
 
 
 class BeatGANsAutoencModel(BeatGANsUNetModel):
-    def __init__(self, conf: BeatGANsAutoencConfig, feature_extractor=None):
+    def __init__(self, conf: BeatGANsAutoencConfig, feat_extractor=None):
         super().__init__(conf)
         self.conf = conf
 
@@ -33,7 +33,7 @@ class BeatGANsAutoencModel(BeatGANsUNetModel):
             time_out_channels=conf.embed_channels,
         )
 
-        self.feature_extractor = feature_extractor
+        self.feat_extractor = feat_extractor
 
     def sample_z(self, n: int, device):
         assert self.conf.is_stochastic
@@ -66,9 +66,9 @@ class BeatGANsAutoencModel(BeatGANsUNetModel):
             cond = self.noise_to_cond(noise)
 
         if cond is None:
-            if self.feature_extractor is not None:
+            if self.feat_extractor is not None:
                 print("Extracting feats on the fly, this should not happen!")
-                cond = self.feature_extractor.extract_feats(x_start)
+                cond = self.feat_extractor.extract_feats(x_start)
             else:
                 raise ValueError("No extracted features provided and no feature extractor available.")
 
