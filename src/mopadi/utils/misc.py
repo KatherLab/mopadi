@@ -3,8 +3,6 @@
 # License: MIT
 
 from io import BytesIO
-
-import lmdb
 from PIL import Image
 
 import torch
@@ -99,35 +97,3 @@ class LMDBImageWriter:
         self.queue.put(None)
         self.queue.close()
         self.worker.join()
-
-
-class LMDBImageReader(Dataset):
-    def __init__(self, path, zfill: int = 7):
-        self.zfill = zfill
-        self.env = lmdb.open(
-            path,
-            max_readers=32,
-            readonly=True,
-            lock=False,
-            readahead=False,
-            meminit=False,
-        )
-
-        if not self.env:
-            raise IOError('Cannot open lmdb dataset', path)
-
-        with self.env.begin(write=False) as txn:
-            self.length = int(
-                txn.get('length'.encode('utf-8')).decode('utf-8'))
-
-    def __len__(self):
-        return self.length
-
-    def __getitem__(self, index):
-        with self.env.begin(write=False) as txn:
-            key = f'{str(index).zfill(self.zfill)}'.encode('utf-8')
-            img_bytes = txn.get(key)
-
-        buffer = BytesIO(img_bytes)
-        img = Image.open(buffer)
-        return img
