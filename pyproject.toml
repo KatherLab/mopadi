@@ -34,6 +34,8 @@ dependencies = [
     "opencv-python==4.11.0.86",
     "wanshi @ git+https://github.com/lazigu/wanshi-utils.git@dev_laura",
     "huggingface-hub[cli]==0.30.2",
+    "conch",
+    "webdataset>=1.0.2",
 ]
 
 [tool.setuptools]
@@ -49,3 +51,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.uv]
 package = true
+
+[tool.uv.sources]
+conch = { git = "https://github.com/Mahmoodlab/CONCH.git", rev = "141cc09c7d4ff33d8eda562bd75169b457f71a62" }

@@ -21,6 +21,7 @@ huggingface-hub[cli]==0.30.2
 seaborn==0.13.2
 transformers==4.48.1
 timm==1.0.14
+webdataset==1.0.2
 -e .
 git+https://github.com/lazigu/wanshi-utils.git@dev_laura
 git+https://github.com/Mahmoodlab/CONCH.git
