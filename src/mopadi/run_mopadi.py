@@ -3,7 +3,6 @@ import torch
 import os
 
 from mopadi.train_diff_autoenc import train
-from mopadi.linear_clf.train_linear_cls import train_cls
 
 from mopadi.configs.templates import default_autoenc
 from mopadi.configs.templates_latent import default_latent
@@ -90,19 +89,6 @@ def main():
         print(f"Starting the training of the latent DPM with the features from {latent_infer_path}...")
         latent_dpm_conf = default_latent(config)
         train(latent_dpm_conf, gpus=gpus)
-
-    elif args.command == 'linear_classifier':
-        autoenc_conf = default_autoenc(config)
-        latent_infer_path = os.path.join(autoenc_conf.base_dir, 'features.pkl')
-        if not os.path.exists(latent_infer_path):
-            print(f"Infering the features with the autoencoder from {os.path.join(autoenc_conf.base_dir, 'last.ckpt')}...")
-            autoenc_conf.eval_programs = ['infer']
-            train(autoenc_conf, gpus=gpus, mode='eval')
-
-        print(f"Starting the training of the linear classifier with the features from {latent_infer_path}...")
-        # train the linear classifier (not computationally heavy)
-        linear_clf_conf = default_linear_clf(config)
-        train_cls(linear_clf_conf, gpus=[gpus[0]])  # use only one GPU because something doesn't work with distributed training
 
     elif args.command == 'mil':
         mode = args.mode
