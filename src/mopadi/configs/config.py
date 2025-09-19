@@ -4,10 +4,10 @@
 # License: MIT
 
 import os
-import shutil
 from typing import Tuple
 from multiprocessing import get_context
 from dataclasses import dataclass
+import glob
 
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data import DataLoader
@@ -19,7 +19,7 @@ from mopadi.diffusion.base import GenerativeType, LossType, ModelMeanType, Model
 from mopadi.model import *
 from mopadi.configs.choices import *
 from mopadi.model.unet import ScaleAt
-from mopadi.model.latentnet import *
+from mopadi.model.extractor import *
 from mopadi.diffusion.resample import UniformSampler
 from mopadi.diffusion.diffusion import space_timesteps
 
@@ -118,7 +118,6 @@ class TrainConfig(BaseConfig):
     net_enc_channel_mult: Tuple[int] = None
     net_enc_grad_checkpoint: bool = False
     net_autoenc_stochastic: bool = False
-    #feature_extractor: FeatureExtractor = FeatureExtractor.conch
     net_num_res_blocks: int = 2
     # number of resblocks for the UNET
     net_num_input_res_blocks: int = None
@@ -146,6 +145,7 @@ class TrainConfig(BaseConfig):
     work_cache_dir: str = os.path.join(ws_path, 'mopadi_cache')
     # to be overridden
     name: str = ''
+
 
     def __post_init__(self):
         self.batch_size_eval = self.batch_size_eval or self.batch_size
@@ -222,46 +222,44 @@ class TrainConfig(BaseConfig):
     def make_eval_diffusion_conf(self):
         return self._make_diffusion_conf(T=self.T_eval)
 
-    def make_dataset(self, path=None, **kwargs):
-        return ImageTileDatasetWithFeatures(
-            root_dirs=self.data_dirs,
+    def make_dataset(self):
+        urls = expand_shards(self.data_dirs)
+        return WDSTilesWithFeatures(
+            shards=urls,
             feature_dirs=self.feature_dirs,
-            test_patients_file_path=self.test_patients_file_path,
-            split=self.split,
-            max_tiles_per_patient=self.max_tiles_per_patient,
-            feat_extractor=self.feat_extractor,
-            cohort_size_threshold=self.cohort_size_threshold,
-            as_tensor=self.as_tensor,
             do_normalize=self.do_normalize,
             do_resize=self.do_resize,
-            img_size=self.img_size,
-            process_only_zips=self.process_only_zips,
-            cache_pickle_tiles_path=self.cache_pickle_tiles_path,
-            cache_cohort_sizes_path=self.cache_cohort_sizes_path,
-            **kwargs)
+            feat_extractor=self.feat_extractor,
+        )
 
-    def make_loader(self,
-                    dataset,
-                    shuffle: bool = False,
-                    num_worker: bool = None,
-                    drop_last: bool = True,
-                    batch_size: int = None,
-                    parallel: bool = False,
-                    sampler = None
-                    ):
+    def make_loader(
+        self,
+        dataset,
+        shuffle: bool = False,   # ignored for WebDataset; shuffling happens inside the pipeline
+        num_worker: int = None,  # <-- int, not bool
+        drop_last: bool = True,
+        batch_size: int = None,
+        parallel: bool = False,
+        sampler=None,            # ignored for WebDataset
+    ):
+        # If it's one of our WebDataset datasets, build a WebLoader.
+        if isinstance(dataset, (WDSTiles, WDSTilesWithFeatures)):
+            return dataset.to_loader(
+                batch_size=batch_size or self.batch_size,
+                num_workers=num_worker or self.num_workers,
+                steps_per_epoch=None,
+            )
+
+        # Fallback: classic Dataset path (for non-WebDataset datasets)
         if parallel and distributed.is_initialized():
-            # drop last to make sure that there is no added special indexes
             print("Parallel and distributed")
-            sampler = DistributedSampler(dataset,
-                                         shuffle=shuffle,
-                                         drop_last=True)
-        #else:
-        #    sampler = None
+            sampler = DistributedSampler(dataset, shuffle=shuffle, drop_last=True)
+            shuffle = False  # sampler controls ordering
+
         return DataLoader(
             dataset,
             batch_size=batch_size or self.batch_size,
             sampler=sampler,
-            # with sampler, use the sample instead of this option
             shuffle=False if sampler else shuffle,
             num_workers=num_worker or self.num_workers,
             pin_memory=True,
@@ -339,25 +337,18 @@ class TrainConfig(BaseConfig):
             raise NotImplementedError(self.model_name)
 
         return self.model_conf
-
-def denormalize_img(images, conf: TrainConfig):
-    """
-    Undo the normalization of an image tensor.
-    """
-    mean, std = conf.normalization_params
-    assert images.ndim == 4, f"Expected 4D input, got {images.ndim}D"
-    mean = torch.tensor(mean, device=images.device).view(1, -1, 1, 1)
-    std = torch.tensor(std, device=images.device).view(1, -1, 1, 1)
-    images = images * std + mean
-    return torch.clamp(images, 0, 1)
-
-def normalize_img(images, conf: TrainConfig):
-    """
-    Apply the normalization to an image tensor.
-    """
-    mean, std = conf.normalization_params
-    assert images.ndim == 4, f"Expected 4D input, got {images.ndim}D"
-    mean = torch.tensor(mean, device=images.device).view(1, -1, 1, 1)
-    std = torch.tensor(std, device=images.device).view(1, -1, 1, 1)
-    images = (images - mean) / std
-    return images/data/cat/ws/lazi257c-mopadi2/mopadi/src/mopadi/configs/config_base.py
+    
+def expand_shards(paths_or_patterns):
+    """Return a list of .tar URLs; accept dirs, globs, or explicit files."""
+    urls = []
+    for p in paths_or_patterns:
+        if os.path.isdir(p):
+            urls += sorted(glob.glob(os.path.join(p, "*.tar")))
+        else:
+            # allow patterns like "/data/shards/BRCA-*.tar" or brace lists
+            matches = sorted(glob.glob(p))
+            urls += matches if matches else [p]
+    urls = [u for u in urls if u.endswith(".tar")]
+    if not urls:
+        raise ValueError("No .tar shards found from: " + ", ".join(paths_or_patterns))
+    return urls

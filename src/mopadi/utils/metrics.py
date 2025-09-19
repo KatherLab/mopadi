@@ -7,11 +7,12 @@ import shutil
 from multiprocessing import get_context
 from tqdm import tqdm, trange
 import lpips
+import math
 
-import torch
 import torchvision
 from pytorch_fid import fid_score
 
+import torch
 from torch import distributed
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
@@ -30,17 +31,42 @@ def make_subset_loader(conf: TrainConfig,
                        shuffle: bool,
                        parallel: bool,
                        drop_last=True):
-    dataset = SubsetDataset(dataset, size=conf.eval_num_images)
+    """
+    Build a loader that yields up to conf.eval_num_images examples.
+
+    - For WebDataset-based iterables (WDSTiles / WDSTilesWithFeatures), we set an
+      epoch length in *batches* so it stops after ~eval_num_images.
+    - For map-style datasets, we wrap with SubsetDataset and use a sampler if needed.
+    """
+
+    # for WebDataset / IterableDataset
+    if isinstance(dataset, IterableDataset):
+        # Prefer using the dataset's own WebLoader to keep the pipeline intact.
+        steps = max(1, math.ceil(conf.eval_num_images / batch_size))
+        # Note: shuffle is handled inside the WebDataset pipeline; DataLoader shuffle must stay False.
+        return dataset.to_loader(
+            batch_size=batch_size,
+            num_workers=conf.num_workers,
+            steps_per_epoch=steps,   # this limits to ~eval_num_images
+        )
+
+    # for Map-style dataset
+    # Cap the requested size by the dataset length
+    size = min(conf.eval_num_images, len(dataset))
+    subset = SubsetDataset(dataset, size=size)
+
     if parallel and distributed.is_initialized():
-        sampler = DistributedSampler(dataset, shuffle=shuffle)
+        sampler = DistributedSampler(subset, shuffle=shuffle, drop_last=drop_last)
+        do_shuffle = False  # sampler controls order
     else:
         sampler = None
+        do_shuffle = shuffle
+
     return DataLoader(
-        dataset,
+        subset,
         batch_size=batch_size,
         sampler=sampler,
-        # with sampler, use the sample instead of this option
-        shuffle=False if sampler else shuffle,
+        shuffle=do_shuffle,
         num_workers=conf.num_workers,
         pin_memory=True,
         drop_last=drop_last,
@@ -85,8 +111,6 @@ def evaluate_lpips(
             if use_inverted_noise:
                 # inverse the noise
                 # with condition from the encoder
-                model_kwargs = {}
-
                 x_T = sampler.ddim_reverse_sample_loop(
                     model=model,
                     x=imgs,
@@ -116,8 +140,7 @@ def evaluate_lpips(
             scores['lpips_alex'].append(lpips_fn_alex.forward(imgs, pred_imgs).view(-1))
 
             norm_pred_imgs = (pred_imgs + 1) / 2   # converts from [-1,1] → [0,1]
-            pred_imgs_fm = normalize_img(norm_pred_imgs, conf)
-            recon_feats = model.feature_extractor.extract_feats(pred_imgs_fm)
+            recon_feats = model.feat_extractor.extract_feats(norm_pred_imgs)
 
             lpips_custom = torch.nn.functional.mse_loss(cond, recon_feats, reduction='none').mean(dim=1)
             scores['lpips_fm'].append(lpips_custom)

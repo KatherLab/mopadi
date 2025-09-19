@@ -1,29 +1,34 @@
 import os, re, io
 from io import BytesIO
-from pathlib import Path
-from collections import defaultdict, OrderedDict
 from PIL import Image
-from torch.utils.data import Dataset, IterableDataset
-from torchvision import transforms
-import torch
-import glob
 from tqdm import tqdm
 import pandas as pd
 import numpy as np
-from mopadi.utils.dist_utils import *
-from dotenv import load_dotenv
+import glob
+import struct
 import pickle
 import json
 import zipfile
 import random
 import hashlib
 import h5py
+from itertools import islice
 import webdataset as wds
-from typing import Dict, Optional, Tuple, List, Union
-from torch.utils.data._utils.collate import default_collate
+from typing import Dict, Optional, List, Union
+from collections import defaultdict, OrderedDict
 
+import torch
+from torch.utils.data import Dataset, IterableDataset
+from torch.utils.data._utils.collate import default_collate
+from torchvision import transforms
+
+from mopadi.utils.dist_utils import *
+
+from dotenv import load_dotenv
 load_dotenv()
 ws_path = os.getenv('WORKSPACE_PATH')
+
+IMAGE_KEYS = ("png", "jpg", "jpeg", "tif", "tiff")
 
 
 class SubsetDataset(Dataset):
@@ -38,6 +43,17 @@ class SubsetDataset(Dataset):
     def __getitem__(self, index):
         assert index < self.size
         return self.dataset[index]
+    
+class TakeIterableDataset(IterableDataset):
+    """Take first `size` samples from an iterable dataset."""
+    def __init__(self, dataset, size: int):
+        assert isinstance(dataset, IterableDataset) or not hasattr(dataset, "__getitem__")
+        self.dataset = dataset
+        self.size = size
+
+    def __iter__(self):
+        # yield exactly `size` samples (will raise StopIteration early if not enough)
+        return islice(iter(self.dataset), self.size)
         
 
 def compute_root_dirs_signature(root_dirs):
@@ -526,43 +542,45 @@ class DefaultAttrDataset(Dataset):
         item['labels'] = labels
         return item
 
+def _build_transform(
+    *,
+    feat_extractor: Optional[str],
+    do_resize: bool,
+    img_size: int,
+    do_normalize: bool,
+    as_tensor: bool,
+):
+    """Compose torchvision transforms, honoring feat_extractor-specific sizes."""
+    size = img_size
+    if do_resize and feat_extractor is not None:
+        # your requested rules
+        if feat_extractor == "conch1_5":
+            size = 448
+            resize = transforms.Resize(size=size, interpolation=transforms.InterpolationMode.BILINEAR)
+        elif feat_extractor == "conch":
+            size = 448
+            resize = transforms.Resize(size=size, interpolation=transforms.InterpolationMode.BICUBIC, antialias=True)
+        elif feat_extractor == "v2":
+            size = 224
+            resize = transforms.Resize(size=size, interpolation=transforms.InterpolationMode.BICUBIC, antialias=True)
+        elif feat_extractor == "uni2":
+            size = 224
+            resize = transforms.Resize(size=size, interpolation=transforms.InterpolationMode.BILINEAR, antialias=True)
+        elif feat_extractor == "custom":
+            resize = transforms.Resize(size=size, interpolation=transforms.InterpolationMode.BILINEAR, antialias=True)
+        else:
+            # fallback to the provided img_size
+            resize = transforms.Resize(size=img_size, interpolation=transforms.InterpolationMode.BILINEAR)
+    else:
+        resize = transforms.Resize(size=img_size, interpolation=transforms.InterpolationMode.BILINEAR) if do_resize else None
 
-def split_key(key: str) -> Tuple[str, str, str]:
-    """
-    Our tar keys are 'cohort/patient/stem'.
-    This splits robustly even if the key has prefixes.
-    """
-    parts = key.split("/")
-    if len(parts) < 3:
-        # fallback: pad missing
-        return ("", "", parts[-1])
-    return parts[-3], parts[-2], parts[-1]
-
-def parse_coords_from_stem(stem: str, regex: str) -> Optional[Tuple[int, int]]:
-    """
-    Parse coords from a filename stem using a regex with two groups.
-    Examples:
-      r"_x(\\d+)_y(\\d+)"  or  r"tile_\\(([-\\d.]+),\\s*([-\\d.]+)\\)"
-    Returns a tuple (x, y) as ints if possible; falls back to rounding floats.
-    """
-    m = re.search(regex, stem)
-    if not m:
-        return None
-    g1, g2 = m.groups()[:2]
-    try:
-        return (int(g1), int(g2))
-    except ValueError:
-        # if floats, round to int for index consistency with many h5s
-        return (int(round(float(g1))), int(round(float(g2))))
-
-def build_transform(do_resize: bool, img_size: int, as_tensor: bool, do_normalize: bool):
-    t: List[transforms.Compose] = []
-    if do_resize:
-        t.append(transforms.Resize(size=img_size, interpolation=transforms.InterpolationMode.BILINEAR))
+    t: List[transforms.Transform] = []
+    if resize is not None:
+        t.append(resize)
     if as_tensor:
         t.append(transforms.ToTensor())
     if do_normalize:
-        # diffusion normalization ([-1,1])
+        # diffusion training expects [-1, 1]
         t.append(transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)))
     return transforms.Compose(t) if t else None
 
@@ -582,60 +600,55 @@ def dict_collate(samples: List[Dict]) -> Dict:
             out[k] = vals
     return out
 
-def _base_wds_pipeline(
-    shards: Union[str, List[str]],
-    shardshuffle: bool = True,
-    resampled: bool = True,
-    nodesplitter=wds.split_by_node,
-    pre_decode_shuffle: int = 10_000,
-):
-    """
-    Common starting pipeline for WebDataset.
-    """
-    ds = wds.WebDataset(
-        shards,
-        shardshuffle=shardshuffle,
-        resampled=resampled,
-        nodesplitter=nodesplitter,
-        handler=wds.handlers.warn_and_continue,
-    )
-    if pre_decode_shuffle and pre_decode_shuffle > 0:
-        ds = ds.shuffle(pre_decode_shuffle)
-    # we stored images under the "png" stream key (Image bytes may still be JPEG; PIL handles it)
-    ds = ds.decode("pil")  # -> sample["png"] is a PIL.Image
-    return ds
+def split_key(key: str):
+    parts = key.strip("/").rsplit("/", 2)
+    if len(parts) == 3:  # cohort/patient/stem
+        return parts[0], parts[1], parts[2]
+    if len(parts) == 2:
+        return "", parts[0], parts[1]
+    return "", "", parts[0]
+
+def _pick_img_pil(sample):
+    for k in IMAGE_KEYS:
+        if k in sample:
+            v = sample[k]
+            if isinstance(v, Image.Image):
+                return v
+            else:
+                return Image.open(io.BytesIO(v)).convert("RGB")
+    raise KeyError(f"No image stream in sample keys: {list(sample.keys())}")
+
+def _as_json(v):
+    if v is None:
+        return None
+    if isinstance(v, (bytes, bytearray)):
+        return json.loads(v.decode("utf-8"))
+    if isinstance(v, str):
+        return json.loads(v)
+    if isinstance(v, dict):
+        return v
+    raise TypeError(f"Unsupported JSON type: {type(v)}")
+
+def _patient_from(sample, default_from_key: str):
+    pt = sample.get("patient.txt")
+    if pt is None: 
+        return default_from_key
+    return pt.decode("utf-8") if isinstance(pt, (bytes, bytearray)) else str(pt)
 
 
-class H5PatientCache:
-    """
-    LRU-ish cache that loads one patient's h5 once and keeps:
-      - feats: torch.FloatTensor (N, D)
-      - index: { (x,y): idx }
-    """
-    def __init__(self, max_items: int = 8, feat_key: str = "feats", coords_key: str = "coords"):
-        self.max_items = max_items
-        self.feat_key = feat_key
-        self.coords_key = coords_key
-        self.cache: "OrderedDict[str, Dict]" = OrderedDict()
+def _coords_from(sample):
+    """Return (x, y) from coords.json only; fail if missing/invalid."""
+    cj = sample.get("coords.json")
+    if cj is None:
+        raise KeyError(f"coords.json missing for key={sample.get('__key__')}")
+    d = _as_json(cj)  # handles bytes/str/dict
 
-    def get(self, h5_path: str, feat_key: Optional[str] = None, coords_key: Optional[str] = None) -> Dict:
-        feat_key = feat_key or self.feat_key
-        coords_key = coords_key or self.coords_key
-        if h5_path in self.cache:
-            self.cache.move_to_end(h5_path)
-            return self.cache[h5_path]
-
-        with h5py.File(h5_path, "r") as f:
-            feats = torch.from_numpy(f[feat_key][:])  # (N,D)
-            coords = f[coords_key][:]
-        index = { (int(x), int(y)) : i for i, (x, y) in enumerate(coords) }
-        payload = {"feats": feats, "index": index}
-
-        self.cache[h5_path] = payload
-        if len(self.cache) > self.max_items:
-            self.cache.popitem(last=False)  # evict LRU
-        return payload
-
+    try:
+        x = float(d["x"])
+        y = float(d["y"])
+    except Exception as e:
+        raise ValueError(f"Invalid coords.json for key={sample.get('__key__')}: {d!r}") from e
+    return (x, y)
 
 class WDSTiles(IterableDataset):
     """
@@ -647,64 +660,105 @@ class WDSTiles(IterableDataset):
         self,
         shards: Union[str, List[str]],
         *,
+        feat_extractor: str = "custom",
         do_resize: bool = True,
         img_size: int = 224,
         as_tensor: bool = True,
         do_normalize: bool = True,
-        coords_regex: str = r"_x(\d+)_y(\d+)",
-        pre_shuffle: int = 10_000,
-        post_shuffle: int = 1024,
+        coords_regex = r"tile_\(([0-9.+-eE]+),\s*([0-9.+-eE]+)\)",
+        pre_shuffle: int = 500,
+        post_shuffle: int = 256,
+        resampled: bool = False,
+        strict: bool = False,  # raise on first issue
     ):
         super().__init__()
         self.shards = shards
-        self.transform = build_transform(do_resize, img_size, as_tensor, do_normalize)
+        self.transform = _build_transform(feat_extractor=feat_extractor, do_resize=do_resize, img_size=img_size, as_tensor=as_tensor, do_normalize=do_normalize)
         self.coords_regex = coords_regex
         self.pre_shuffle = pre_shuffle
         self.post_shuffle = post_shuffle
+        self.resampled = resampled  # if True, ignores shardshuffle
+        self.strict = strict
 
-    # build the streaming pipeline (unbatched)
     def pipeline(self):
-        def mapper(sample):
-            key = sample["__key__"]                      # "cohort/patient/stem"
-            cohort, patient, stem = split_key(key)
-            img_pil: Image.Image = sample["png"]         # PIL (from .decode("pil"))
-            img = self.transform(img_pil) if self.transform is not None else transforms.ToTensor()(img_pil)
+        handler = wds.handlers.reraise_exception if self.strict else wds.handlers.warn_and_continue
+        shardshuffle_val = 0 if self.resampled else 10000
 
-            coords = parse_coords_from_stem(stem, self.coords_regex) or (-1, -1)
-            return {
-                "img": img,                                 # Tensor CxHxW (normalized if requested)
-                "coords": torch.tensor(coords, dtype=torch.long),
-                "filename": f"{stem}.png",
-                "patient": patient,
-                "cohort": cohort,
-                "key": key,
-            }
+        ds = wds.WebDataset(
+                self.shards,
+                resampled=self.resampled,
+                shardshuffle=shardshuffle_val,
+                nodesplitter=wds.split_by_node,
+                workersplitter=wds.split_by_worker,
+                handler=handler,
+            )
+        if self.pre_shuffle:
+            ds = ds.shuffle(self.pre_shuffle)
 
-        ds = _base_wds_pipeline(
-            self.shards, shardshuffle=True, resampled=True,
-            pre_decode_shuffle=self.pre_shuffle
-        ).map(mapper, handler=wds.handlers.warn_and_continue)
+        ds = ds.map(self._map_one, handler=handler)
 
-        if self.post_shuffle and self.post_shuffle > 0:
+        if self.post_shuffle:
             ds = ds.shuffle(self.post_shuffle)
         return ds
-
+    
     def __iter__(self):
-        # return unbatched samples
-        yield from self.pipeline()
+        for s in self.pipeline():
+            yield s
 
-    def to_loader(self, batch_size: int, num_workers: int, steps_per_epoch: Optional[int] = None):
-        ds = self.pipeline().batched(batch_size, partial=False).map(dict_collate)
+    def to_loader(self, batch_size: int, num_workers: int, steps_per_epoch=None):
+        ds = self.pipeline()
+        ds = ds.batched(batch_size, partial=False, collation_fn=dict_collate)
         loader = wds.WebLoader(
             ds,
-            batch_size=None,                 # already batched
+            batch_size=None,                 # already batched by .batched()
             num_workers=num_workers,
             pin_memory=True,
             persistent_workers=num_workers > 0,
         )
         return loader.with_epoch(steps_per_epoch) if steps_per_epoch else loader
 
-# ---------- class: images + precomputed features
+    def _map_one(self, sample):
+        key = sample["__key__"]
+        cohort, patient_key, stem = split_key(key)
+        img_pil = _pick_img_pil(sample)
+        img = self.transform(img_pil) if self.transform else transforms.ToTensor()(img_pil)
+        coords = _coords_from(sample)
+
+        return {
+            "img": img,
+            "coords": torch.tensor(coords, dtype=torch.float32),
+            "filename": f"{stem}.png",
+            "patient": patient_key,
+            "cohort": cohort,
+            "key": key,
+        }
+
+def f32pair_key(x, y):
+    return struct.pack("<ff", np.float32(x), np.float32(y))
+
+class H5OpenFileCache:
+    def __init__(self, max_open=4, feat_key="feats", coords_key="coords"):
+        self.max_open = max_open
+        self.feat_key = feat_key
+        self.coords_key = coords_key
+        self.cache = OrderedDict()
+
+    def get(self, h5_path: str):
+        if h5_path in self.cache:
+            self.cache.move_to_end(h5_path)
+            return self.cache[h5_path]
+
+        f = h5py.File(h5_path, "r")
+        coords = np.asarray(f[self.coords_key][:], dtype=np.float32)  # (N,2) as float32
+        index = {f32pair_key(x, y): i for i, (x, y) in enumerate(coords)}
+        payload = {"f": f, "feat_ds": f[self.feat_key], "index": index, "coords": coords}
+        self.cache[h5_path] = payload
+
+        if len(self.cache) > self.max_open:
+            _, old = self.cache.popitem(last=False)
+            try: old["f"].close()
+            except Exception: pass
+        return payload
 
 class WDSTilesWithFeatures(WDSTiles):
     """
@@ -727,37 +781,71 @@ class WDSTilesWithFeatures(WDSTiles):
         self.feature_dirs = feature_dirs
         self.feat_key = feat_key
         self.coords_key = coords_key
-        self.cache = H5PatientCache(max_items=h5_cache_items, feat_key=feat_key, coords_key=coords_key)
+        self.cache = H5OpenFileCache(max_open=h5_cache_items, feat_key=feat_key, coords_key=coords_key)
+        self._h5_path_cache = {} 
+
+    def pipeline(self):
+        base = super().pipeline()
+        return base.map(self._add_features, handler=wds.handlers.warn_and_continue)
+
+    def _add_features(self, sample):
+        cohort  = sample["cohort"]
+        patient = sample["patient"]
+        x, y = (float(v) for v in sample["coords"].tolist())
+
+        h5_path = self._find_h5_path_for_patient(cohort, patient)
+        if h5_path is None:
+            raise FileNotFoundError(f"No H5 for cohort={cohort} patient={patient}")
+
+        payload = self.cache.get(h5_path)
+        k = f32pair_key(x, y)
+        idx = payload["index"].get(k)
+
+        if idx is None:
+            # ultra-rare: final safety with tiny tol in float32 space
+            c = payload["coords"]  # already float32
+            hits = np.where((np.abs(c[:,0]-np.float32(x)) <= 1e-6) &
+                            (np.abs(c[:,1]-np.float32(y)) <= 1e-6))[0]
+            if hits.size == 0:
+                raise KeyError(f"coords {(x, y)} not found in {h5_path}")
+            idx = int(hits[0])
+
+        sample["feat"] = torch.from_numpy(np.asarray(payload["feat_ds"][idx]))
+        return sample
 
     def _resolve_feat_dir(self, cohort: str) -> Optional[str]:
         if isinstance(self.feature_dirs, dict):
             return self.feature_dirs.get(cohort)
-        # list fallback: choose first that contains cohort in its path
         for d in self.feature_dirs:
             if cohort in d:
                 return d
         return None
 
-    def pipeline(self):
-        base = super().pipeline()
+    def _find_h5_path_for_patient(self, cohort: str, patient: str) -> Optional[str]:
+        key = (cohort, patient)
+        if key in self._h5_path_cache:
+            return self._h5_path_cache[key]
 
-        def add_features(sample):
-            cohort = sample["cohort"]
-            patient = sample["patient"]
-            coords_tuple = tuple(int(v) for v in sample["coords"].tolist())
+        feat_dir = self._resolve_feat_dir(cohort)
+        if feat_dir is None:
+            self._h5_path_cache[key] = None
+            return None
 
-            feat_dir = self._resolve_feat_dir(cohort)
-            if feat_dir is None:
-                raise FileNotFoundError(f"No feature dir configured for cohort '{cohort}'")
+        candidates = [patient, _strip_trailing_hash(patient)]
+        seen = set()
+        candidates = [c for c in candidates if not (c in seen or seen.add(c))]
 
-            h5_path = os.path.join(feat_dir, f"{patient}.h5")
-            payload = self.cache.get(h5_path, feat_key=self.feat_key, coords_key=self.coords_key)
+        for name in candidates:
+            path = os.path.join(feat_dir, f"{name}.h5")
+            if os.path.exists(path):
+                self._h5_path_cache[key] = path
+                return path
 
-            idx = payload["index"].get(coords_tuple)
-            if idx is None:
-                raise KeyError(f"coords {coords_tuple} not found in {h5_path}")
+        self._h5_path_cache[key] = None
+        return None
 
-            sample["feat"] = payload["feats"][idx]
-            return sample
-
-        return base.map(add_features, handler=wds.handlers.warn_and_continue)
+def _strip_trailing_hash(patient):
+    """Strip trailing .<hash> from patient ID if necessary.
+    E.g. TCGA-DC-6158-01Z-00-DX1.06cf3c33-83e1-46fd-8717-6c4cddb659d9.f8a1002cd63434ba4e125594d958e55b3e16975b35dbe77cf9b4ab4887951cf8
+    becomes  TCGA-DC-6158-01Z-00-DX1.06cf3c33-83e1-46fd-8717-6c4cddb659d9"""
+    return ".".join(patient.split('.')[:2])
