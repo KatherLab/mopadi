@@ -133,6 +133,7 @@ class TrainConfig(BaseConfig):
     T_sampler: str = 'uniform'
     T: int = 1_000
     total_samples: int = 10_000_000
+    steps_per_epoch: int = 5_000
     warmup: int = 0
     pretrain: PretrainConfig = None
     continue_from: PretrainConfig = None
@@ -242,12 +243,11 @@ class TrainConfig(BaseConfig):
         parallel: bool = False,
         sampler=None,            # ignored for WebDataset
     ):
-        # If it's one of our WebDataset datasets, build a WebLoader.
         if isinstance(dataset, (WDSTiles, WDSTilesWithFeatures)):
             return dataset.to_loader(
                 batch_size=batch_size or self.batch_size,
                 num_workers=num_worker or self.num_workers,
-                steps_per_epoch=None,
+                steps_per_epoch=self.steps_per_epoch,
             )
 
         # Fallback: classic Dataset path (for non-WebDataset datasets)

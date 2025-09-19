@@ -71,22 +71,36 @@ def default_autoenc(config):
 
     conf.data_dirs = list(data_config.get('data_dirs', None))
     conf.feature_dirs = list(data_config.get('feature_dirs', None))
-    conf.test_patients_file_path = data_config.get('test_patients_file_path', None)
-    conf.process_only_zips = data_config.get('process_only_zips', False)
-    conf.cache_pickle_tiles_path = data_config.get('cache_pickle_tiles_path', None)
-    conf.cache_cohort_sizes_path = data_config.get('cache_cohort_sizes_path', None)
-    conf.split = data_config.get('split', 'none')
+    conf.feat_extractor = data_config.get('feature_extractor', None)
+    #conf.test_patients_file_path = data_config.get('test_patients_file_path', None)
+    #conf.process_only_zips = data_config.get('process_only_zips', False)
+    #conf.cache_pickle_tiles_path = data_config.get('cache_pickle_tiles_path', None)
+    #conf.cache_cohort_sizes_path = data_config.get('cache_cohort_sizes_path', None)
+    #conf.split = data_config.get('split', 'none')
     conf.max_tiles_per_patient = data_config.get('max_tiles_per_patient', None)
     conf.cohort_size_threshold = data_config.get('cohort_size_threshold', None)
     conf.as_tensor = data_config.get('as_tensor', True)
     conf.do_normalize = data_config.get('do_normalize', True)
     conf.do_resize = data_config.get('do_resize', False)
 
-    conf.img_size = autoenc_config.get('img_size', 224)
+    conf.load_pretrained_autoenc = False
+
+    _size_by_extractor = {
+        "conch": 448,
+        "conch1_5": 448,
+        "v2": 224,
+        "uni2": 224,
+    }
+    fe_key = (conf.feat_extractor or "").lower()
+    default_img_size = _size_by_extractor.get(fe_key, 224)
+
+    # allow explicit override via config; otherwise use mapping
+    conf.img_size = autoenc_config.get("img_size", default_img_size)
     conf.sample_size = autoenc_config.get('sample_size', 32)
     conf.batch_size = autoenc_config.get('batch_size', 64)
     conf.batch_size_eval = autoenc_config.get('batch_size_eval', 64)
     conf.total_samples = autoenc_config.get('total_samples', 200_000_000)
+    conf.steps_per_epoch = autoenc_config.get('steps_per_epoch', 5_000)
     conf.warmup = autoenc_config.get('warmup', 0)
     conf.net_ch = autoenc_config.get('net_ch', 128)
     conf.net_ch_mult = tuple(autoenc_config.get('net_ch_mult', (1, 1, 2, 2, 4, 4)))
@@ -102,7 +116,6 @@ def default_autoenc(config):
     elif conf.optimizer == 'adamw':
         conf.optimizer = OptimizerType.adamw
 
-    conf.feat_extractor = autoenc_config.get('foundation_model', None)
     conf.feat_dim = autoenc_config.get('feat_dim', 512)  # should be determined automatically?
     conf.feat_loss = autoenc_config.get('feat_loss', False)
     conf.lambda_feat = autoenc_config.get('lambda_feat', 0.3)

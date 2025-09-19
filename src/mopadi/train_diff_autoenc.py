@@ -31,6 +31,8 @@ from mopadi.model.extractor import (
     FeatureExtractorConch, FeatureExtractorConch15,
     FeatureExtractorVirchow2, FeatureExtractorUNI2
 )
+from mopadi.configs.config import expand_shards
+from mopadi.dataset import WDSTilesWithFeatures
 
 torch.set_float32_matmul_precision('medium')
 
@@ -52,7 +54,7 @@ class LitModel(pl.LightningModule):
         self.ema_model.eval()
 
         # load and initialize pretrained feature extractor
-        self.feature_extractor = None
+        self.feat_extractor = None
 
         model_size = 0
         for param in self.model.parameters():
@@ -131,50 +133,72 @@ class LitModel(pl.LightningModule):
         self.train_data = self.conf.make_dataset()
         self.val_data = self.train_data
 
-        # initialize Feature Extractor after the device is set
-        if self.feature_extractor is None: 
-            if self.conf.feat_extractor == 'conch':
-                self.feature_extractor = FeatureExtractorConch(device=self.device)
-            elif self.conf.feat_extractor == 'conch1_5':
-                self.feature_extractor = FeatureExtractorConch15(device=self.device)
-            elif self.conf.feat_extractor == 'v2':
-                self.feature_extractor = FeatureExtractorVirchow2(device=self.device)
-            elif self.conf.feat_extractor == 'uni2':
-                self.feature_extractor = FeatureExtractorUNI2(device=self.device)
+        if self.global_rank == 0:
+            print(f"[conf] feat_extractor = {self.conf.feat_extractor!r}")
 
-        self.model.feature_extractor = self.feature_extractor
-        self.ema_model.feature_extractor = self.feature_extractor
+        # initialize Feature Extractor after the device is set
+        if self.feat_extractor is None: 
+            if self.conf.feat_extractor == 'conch':
+                self.feat_extractor = FeatureExtractorConch(device=self.device)
+            elif self.conf.feat_extractor == 'conch1_5':
+                self.feat_extractor = FeatureExtractorConch15(device=self.device)
+            elif self.conf.feat_extractor == 'v2':
+                self.feat_extractor = FeatureExtractorVirchow2(device=self.device)
+            elif self.conf.feat_extractor == 'uni2':
+                self.feat_extractor = FeatureExtractorUNI2(device=self.device)
+
+        self.model.feat_extractor = self.feat_extractor
+        self.ema_model.feat_extractor = self.feat_extractor
 
     def on_fit_start(self):
         # Make sure the extractor is on the same device as the model
-        if self.feature_extractor is not None:
-            if hasattr(self.feature_extractor, "model"):
-                self.feature_extractor.model = self.feature_extractor.model.to(self.device)
-            if hasattr(self.feature_extractor, "device"):
-                self.feature_extractor.device = self.device
+        if self.feat_extractor is not None:
+            if hasattr(self.feat_extractor, "model"):
+                self.feat_extractor.model = self.feat_extractor.model.to(self.device)
+            if hasattr(self.feat_extractor, "device"):
+                self.feat_extractor.device = self.device
         # reattach in case of rewraps
-        self.model.feature_extractor = self.feature_extractor
-        self.ema_model.feature_extractor = self.feature_extractor
+        self.model.feat_extractor = self.feat_extractor
+        self.ema_model.feat_extractor = self.feat_extractor
 
-        if not self.conf.load_pretrained_autoenc:
-            print("\n=== SANITY CHECK: Checking first batch from DataLoader ===")
-            dl = self.train_dataloader()
-            batch = next(iter(dl))
-            if isinstance(batch, dict):
-                for k, v in batch.items():
-                    print(f"  {k}: shape={getattr(v, 'shape', None)}, dtype={getattr(v, 'dtype', None)}")
-            elif isinstance(batch, (tuple, list)):
-                print("  tuple/list:", [getattr(b, 'shape', None) for b in batch])
-            else:
-                print("  type:", type(batch))
+        if self.global_rank == 0:
+            if not self.conf.load_pretrained_autoenc:
+                print("\n=== LIGHT SANITY CHECK (single shard, no shuffle) ===")
+                shard_urls = expand_shards(self.conf.data_dirs)
+                one_shard = shard_urls[0]
 
-            if 'coords' in batch:
-                coords = batch['coords'] 
-                if (coords == -1).all(dim=1).any():
-                    print("[WARNING] Some or all filenames do not contain coordinates (or they were not extracted correctly)! Using dummy value [-1, -1] for tiles without coords.")
-            print("=== END SANITY CHECK ===\n")
+                mini_loader = WDSTilesWithFeatures(
+                    shards=one_shard,
+                    feature_dirs=self.conf.feature_dirs,
+                    feat_extractor=self.conf.feat_extractor,
+                    do_resize=self.conf.do_resize,
+                    img_size=self.conf.img_size,
+                    do_normalize=self.conf.do_normalize,
+                    pre_shuffle=0,
+                    post_shuffle=0,
+                    h5_cache_items=1,
+                ).to_loader(
+                    batch_size=self.conf.batch_size,
+                    num_workers=0,
+                    steps_per_epoch=1
+                )
 
-            self.sanity_check_precomputed_feats(n_batches=1)
+                batch = next(iter(mini_loader))
+                keys = {"img", "coords", "feat"}  # only show these
+                if isinstance(batch, dict):
+                    for k in keys:
+                        v = batch.get(k, None)
+                        if isinstance(v, torch.Tensor):
+                            print(f"  {k}: shape={tuple(v.shape)}, dtype={v.dtype}")
+                        elif v is None:
+                            print(f"  {k}: MISSING")
+                        else:
+                            print(f"  {k}: type={type(v).__name__}")
+                else:
+                    print("  type:", type(batch))
+                print("=== END LIGHT SANITY CHECK ===\n")
+
+                self.sanity_check_precomputed_feats(n_batches=1)
 
     def train_dataloader(self):
         """
@@ -186,7 +210,7 @@ class LitModel(pl.LightningModule):
         conf.batch_size = self.batch_size
 
         dataloader = conf.make_loader(self.train_data,
-                                      shuffle=True,
+                                      #shuffle=True, WebDataset is an IterableDataset, and PyTorch forbids shuffle=True in DataLoader for iterable datasets
                                       drop_last=True)
         return dataloader
 
@@ -520,7 +544,7 @@ class LitModel(pl.LightningModule):
                 elif imgs01.max() > 1.5:           # uint8 0..255
                     imgs01 = (imgs01 / 255.0).clamp(0, 1)
 
-                feats_new = self.feature_extractor.extract_feats(imgs01, need_grad=False).float()
+                feats_new = self.feat_extractor.extract_feats(imgs01, need_grad=False).float()
 
                 if feats_new.shape != feats_pre.shape:
                     print(f"[FEAT SANITY] Shape mismatch: on-the-fly {tuple(feats_new.shape)} "
