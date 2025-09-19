@@ -113,12 +113,6 @@ class TrainConfig(BaseConfig):
     net_ch: int = 64
     net_enc_attn: Tuple[int] = None
     net_enc_k: int = None
-    # number of resblocks for the encoder (half-unet)
-    net_enc_num_res_blocks: int = 2
-    net_enc_channel_mult: Tuple[int] = None
-    net_enc_grad_checkpoint: bool = False
-    net_autoenc_stochastic: bool = False
-    net_num_res_blocks: int = 2
     # number of resblocks for the UNET
     net_num_input_res_blocks: int = None
     net_enc_num_cls: int = None
@@ -310,12 +304,6 @@ class TrainConfig(BaseConfig):
                 dims=2,
                 dropout=self.dropout,
                 embed_channels=self.net_beatgans_embed_channels,
-                enc_out_channels=self.style_ch,
-                enc_pool=self.net_enc_pool,
-                enc_num_res_block=self.net_enc_num_res_blocks,
-                enc_channel_mult=self.net_enc_channel_mult,
-                enc_grad_checkpoint=self.net_enc_grad_checkpoint,
-                enc_attn_resolutions=self.net_enc_attn,
                 image_size=self.img_size,
                 in_channels=3,
                 model_channels=self.net_ch,
