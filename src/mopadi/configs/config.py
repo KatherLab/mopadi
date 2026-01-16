@@ -69,6 +69,7 @@ class TrainConfig(BaseConfig):
     beatgans_loss_type: LossType = LossType.mse
     feat_loss: bool = False
     lambda_feat: float = 0.5   # for computing final loss if feat_loss True
+    lambda_lp: float = 0.1
     beatgans_model_mean_type: ModelMeanType = ModelMeanType.eps
     beatgans_model_var_type: ModelVarType = ModelVarType.fixed_large
     beatgans_rescale_timesteps: bool = False
@@ -102,8 +103,6 @@ class TrainConfig(BaseConfig):
     enc_transform_nheads: int = 8  # feat projection layer
     enc_transform_num_layers: int = 2  # feat projection layer
     net_resblock_updown: bool = True
-    net_enc_use_time: bool = False
-    net_enc_pool: str = 'adaptivenonzero'
     net_beatgans_gradient_checkpoint: bool = False
     net_beatgans_resnet_two_cond: bool = False
     net_beatgans_resnet_use_zero_module: bool = True
@@ -111,16 +110,15 @@ class TrainConfig(BaseConfig):
     net_beatgans_resnet_cond_channels: int = None
     net_ch_mult: Tuple[int] = None
     net_ch: int = 64
-    net_enc_attn: Tuple[int] = None
-    net_enc_k: int = None
+    net_autoenc_stochastic: bool = False
+    net_num_res_blocks: int = 2
     # number of resblocks for the UNET
     net_num_input_res_blocks: int = None
-    net_enc_num_cls: int = None
-    num_workers: int = 4 # 20 for dgx
+    num_workers: int = 6 # 20 for dgx
     parallel: bool = False
     postfix: str = ''
     sample_size: int = 64
-    sample_every_samples: int = 20_000
+    reconstruct_every_samples: int = 20_000
     save_every_samples: int = 100_000
     style_ch: int = 512   # conch v1.5 = 768
     T_eval: int = 1_000
@@ -149,7 +147,7 @@ class TrainConfig(BaseConfig):
     def scale_up_gpus(self, num_gpus, num_nodes=1):
         self.eval_ema_every_samples *= num_gpus * num_nodes
         self.eval_every_samples *= num_gpus * num_nodes
-        self.sample_every_samples *= num_gpus * num_nodes
+        self.reconstruct_every_samples *= num_gpus * num_nodes
         self.batch_size *= num_gpus * num_nodes
         self.batch_size_eval *= num_gpus * num_nodes
         return self
@@ -217,15 +215,32 @@ class TrainConfig(BaseConfig):
     def make_eval_diffusion_conf(self):
         return self._make_diffusion_conf(T=self.T_eval)
 
-    def make_dataset(self):
+    def make_dataset(self, use_web_dataset=True, **kwargs):
         urls = expand_shards(self.data_dirs)
-        return WDSTilesWithFeatures(
-            shards=urls,
-            feature_dirs=self.feature_dirs,
-            do_normalize=self.do_normalize,
-            do_resize=self.do_resize,
-            feat_extractor=self.feat_extractor,
-        )
+        if use_web_dataset:
+            return WDSTilesWithFeatures(
+                shards=urls,
+                feature_dirs=self.feature_dirs,
+                do_normalize=self.do_normalize,
+                do_resize=self.do_resize,
+                feat_extractor=self.feat_extractor,
+            )
+        else:
+            if self.data_name == 'tcga_crc_512_conch_nolmdb' or self.data_name == 'tcga_brca_512_conch_nolmdb':
+                return ImageTileDatasetWithFeatures(root_dirs=[self.data_path], features_dirs=self.feat_path, test_patients_file=self.test_patient_file, feat_extractor='conch', **kwargs)
+            elif self.data_name == 'tcga_all_conch':
+                return ImageTileDatasetWithFeatures(root_dirs=self.data_path, features_dirs=self.feat_path, test_patients_file=None, feat_extractor='conch', cache_pickle_tiles_path='temp/tcga_all_tile_paths_all.pkl', **kwargs)
+            elif self.data_name == 'tcga_all_conch_sample_1024':
+                return ImageTileDatasetWithFeatures(root_dirs=self.data_path, features_dirs=self.feat_path, test_patients_file=None, max_tiles_per_patient=1024, feat_extractor='conch', cache_pickle_tiles_path='temp/tcga_all_tile_paths_sampled_1024.pkl', **kwargs)
+            elif self.data_name == 'tcga_crc_224_v2':
+                return ImageTileDatasetWithFeatures(root_dirs=[self.data_path], features_dirs=[self.feat_path], test_patients_file=None, max_tiles_per_patient=None, feat_extractor='v2', cache_pickle_tiles_path='temp/tcga_crc.pkl', **kwargs)
+            elif self.data_name == 'tcga_crc_448_conch1_5':
+                return ImageTileDatasetWithFeatures(root_dirs=[self.data_path], features_dirs=[self.feat_path], test_patients_file=None, max_tiles_per_patient=None, feat_extractor='conch1_5', cache_pickle_tiles_path='temp/tcga_crc.pkl', **kwargs)
+            elif self.data_name == 'tcga_crc_448_conch':
+                return ImageTileDatasetWithFeatures(root_dirs=[self.data_path], features_dirs=[self.feat_path], test_patients_file=None, max_tiles_per_patient=None, feat_extractor='conch', cache_pickle_tiles_path='temp/tcga_crc.pkl', **kwargs)
+            elif self.data_name == 'tcga_crc_224_uni2':
+                return ImageTileDatasetWithFeatures(root_dirs=[self.data_path], features_dirs=[self.feat_path], test_patients_file=None, max_tiles_per_patient=None, feat_extractor='uni2', cache_pickle_tiles_path='temp/tcga_crc.pkl', **kwargs)
+
 
     def make_loader(
         self,

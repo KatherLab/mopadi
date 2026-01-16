@@ -94,7 +94,6 @@ def default_autoenc(config):
     fe_key = (conf.feat_extractor or "").lower()
     default_img_size = _size_by_extractor.get(fe_key, 224)
 
-    # allow explicit override via config; otherwise use mapping
     conf.img_size = autoenc_config.get("img_size", default_img_size)
     conf.sample_size = autoenc_config.get('sample_size', 32)
     conf.batch_size = autoenc_config.get('batch_size', 64)
@@ -116,9 +115,21 @@ def default_autoenc(config):
     elif conf.optimizer == 'adamw':
         conf.optimizer = OptimizerType.adamw
 
-    conf.feat_dim = autoenc_config.get('feat_dim', 512)  # should be determined automatically?
+    _feat_dim_by_extractor = {
+    "conch": 512,
+    "conch1_5": 512,
+    "v2": 1280,
+    "uni2": 1536,
+    }
+    feat_dim = _feat_dim_by_extractor.get(fe_key, 512)
+    conf.feat_dim = autoenc_config.get('feat_dim', feat_dim)
+    conf.style_ch = conf.feat_dim
+    conf.net_beatgans_embed_channels = conf.feat_dim
+
     conf.feat_loss = autoenc_config.get('feat_loss', False)
     conf.lambda_feat = autoenc_config.get('lambda_feat', 0.3)
+
+    conf.lambda_lp = autoenc_config.get('lambda_lp', 0.1)
 
     conf.name = 'autoenc'
     conf.make_model_conf()
