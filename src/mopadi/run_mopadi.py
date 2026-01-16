@@ -5,7 +5,6 @@ import os
 from mopadi.train_diff_autoenc import train
 
 from mopadi.configs.templates import default_autoenc
-from mopadi.configs.templates_latent import default_latent
 from mopadi.configs.templates_cls import *
 
 from mopadi.mil.crossval.classifier_train import *
@@ -38,12 +37,6 @@ def main():
     autoenc_parser = subparsers.add_parser('autoenc', help='Train autoencoder')
     autoenc_parser.add_argument('-c', '--config', required=True, help='Path to config YAML')
 
-    latent_parser = subparsers.add_parser('latent', help='Train latent DPM')
-    latent_parser.add_argument('-c', '--config', required=True, help='Path to config YAML')
-
-    linear_parser = subparsers.add_parser('linear_classifier', help='Train linear classifier')
-    linear_parser.add_argument('-c', '--config', required=True, help='Path to config YAML')
-
     mil_parser = subparsers.add_parser('mil', help='Train MIL classifier')
     mil_parser.add_argument('-c', '--config', required=True, help='Path to config YAML')
 
@@ -74,21 +67,6 @@ def main():
         # NOTE: this requires 8 (40Gb) or 4 (80Gb) x A100
         autoenc_conf = default_autoenc(config)
         train(autoenc_conf, gpus=gpus)
-
-    elif args.command == 'latent':
-        # infer the features for training the latent DPM
-        # NOTE: not gpu heavy, but more gpus can be of use!
-        autoenc_conf = default_autoenc(config)
-        latent_infer_path = os.path.join(autoenc_conf.base_dir, 'features.pkl')
-        if not os.path.exists(latent_infer_path):
-            print(f"Infering the features with the autoencoder from {os.path.join(autoenc_conf.base_dir, 'last.ckpt')}...")
-            autoenc_conf.eval_programs = ['infer']
-            train(autoenc_conf, gpus=gpus, mode='eval')
-        
-        # train the latent DPM (not computationally heavy)
-        print(f"Starting the training of the latent DPM with the features from {latent_infer_path}...")
-        latent_dpm_conf = default_latent(config)
-        train(latent_dpm_conf, gpus=gpus)
 
     elif args.command == 'mil':
         mode = args.mode
