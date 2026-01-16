@@ -630,7 +630,6 @@ def _build_transform(
     """Compose torchvision transforms, honoring feat_extractor-specific sizes."""
     size = img_size
     if do_resize and feat_extractor is not None:
-        # your requested rules
         if feat_extractor == "conch1_5":
             size = 448
             resize = transforms.Resize(size=size, interpolation=transforms.InterpolationMode.BILINEAR)
@@ -646,7 +645,6 @@ def _build_transform(
         elif feat_extractor == "custom":
             resize = transforms.Resize(size=size, interpolation=transforms.InterpolationMode.BILINEAR, antialias=True)
         else:
-            # fallback to the provided img_size
             resize = transforms.Resize(size=img_size, interpolation=transforms.InterpolationMode.BILINEAR)
     else:
         resize = transforms.Resize(size=img_size, interpolation=transforms.InterpolationMode.BILINEAR) if do_resize else None
