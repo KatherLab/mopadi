@@ -25,13 +25,11 @@ from mopadi.configs.config import *
 from mopadi.dataset import *
 from mopadi.utils.dist_utils import *
 from mopadi.utils.metrics import *
-from mopadi.utils.renderer import *
 from mopadi.utils.misc import *
 from mopadi.model.extractor import (
     FeatureExtractorConch, FeatureExtractorConch15,
     FeatureExtractorVirchow2, FeatureExtractorUNI2
 )
-from mopadi.configs.config import expand_shards
 from mopadi.dataset import WDSTilesWithFeatures
 
 torch.set_float32_matmul_precision('medium')
@@ -246,8 +244,8 @@ class LitModel(pl.LightningModule):
         """
         with autocast(device_type='cuda', enabled=False):
 
-            imgs = batch['img']
-            feats = batch['feat']
+            imgs = batch['img'].to(self.device)
+            feats = batch['feat'].to(self.device, dtype=torch.float32)
             model_kwargs = {'cond': feats}
 
             if self.conf.train_mode == TrainMode.diffusion:
@@ -385,8 +383,8 @@ class LitModel(pl.LightningModule):
                     self.logger.experiment.add_image(f'sample{postfix}', grid, self.num_samples)
             model.train()
 
-        if self.conf.sample_every_samples > 0 and is_time(
-                self.num_samples, self.conf.sample_every_samples,
+        if self.conf.reconstruct_every_samples > 0 and is_time(
+                self.num_samples, self.conf.reconstruct_every_samples,
                 self.conf.batch_size_effective):
 
             do(self.model, '', use_xstart=True, save_real=True, cond=cond)
@@ -428,21 +426,22 @@ class LitModel(pl.LightningModule):
                                        self.conf,
                                        device=self.device,
                                        val_data=self.val_data,
+                                       use_inverted_noise=True
                                        )
 
                 if self.global_rank == 0:
                     for key, val in score.items():
                         self.logger.experiment.add_scalar(
                             f'{key}{postfix}', val, self.num_samples)
-                if not os.path.exists(self.conf.logdir):
-                    os.makedirs(self.conf.logdir)
-                with open(os.path.join(self.conf.logdir, 'eval.txt'),
-                        'a') as f:
-                    metrics = {
-                        f'LPIPS{postfix}': score,
-                        'num_samples': self.num_samples,
-                    }
-                    f.write(json.dumps(metrics) + "\n")
+                    if not os.path.exists(self.conf.logdir):
+                        os.makedirs(self.conf.logdir)
+                    with open(os.path.join(self.conf.logdir, 'eval.txt'),
+                            'a') as f:
+                        metrics = {
+                            f'Metrics{postfix}': score,
+                            'num_samples': self.num_samples,
+                        }
+                        f.write(json.dumps(metrics) + "\n")
 
         if self.conf.eval_every_samples > 0 and self.num_samples > 0 and is_time(
                 self.num_samples, self.conf.eval_every_samples,
@@ -600,65 +599,7 @@ class LitModel(pl.LightningModule):
         # make sure you seed each worker differently!
         # it will run only one step!
         print('global step:', self.global_step)
-
-        # evals those "fidXX"
-        """
-        "fid<T>" = unconditional generation (conf.train_mode = diffusion).
-            Note:   Diff. autoenc will still receive real images in this mode.
-        """
-        for each in self.conf.eval_programs:
-            if each.startswith('fid'):
-
-                # evalT
-                _, T = each.split('fid')
-                T = int(T)
-                print(f'evaluating FID T = {T}...')
-
-                self.train_dataloader()
-                sampler = self.conf._make_diffusion_conf(T=T).make_sampler()
-
-                conf = self.conf.clone()
-                conf.eval_num_images = 50_000
-                score_gen, score_rec = evaluate_fid(
-                    sampler,
-                    self.ema_model,
-                    conf,
-                    device=self.device,
-                    train_data=self.train_data,
-                    val_data=self.val_data,
-                    conds_mean=self.conds_mean,
-                    conds_std=self.conds_std,
-                    remove_cache=False,
-                    #clip_latent_noise=clip_latent_noise,
-                )
-
-                self.log(f'fid_ema_T{T}_gen', score_gen)
-                self.log(f'fid_ema_T{T}_rec', score_rec)
-
-        """
-        "recon<T>" = reconstruction & autoencoding (without noise inversion)
-        """
-        for each in self.conf.eval_programs:
-            if each.startswith('recon'):
-                self.model: BeatGANsAutoencModel
-                _, T = each.split('recon')
-                T = int(T)
-                print(f'evaluating reconstruction T = {T}...')
-
-                sampler = self.conf._make_diffusion_conf(T=T).make_sampler()
-
-                conf = self.conf.clone()
-                # eval whole val dataset
-                conf.eval_num_images = len(self.val_data)
-                # {'lpips', 'mse', 'ssim'}
-                score = evaluate_lpips(sampler,
-                                       self.ema_model,
-                                       conf,
-                                       device=self.device,
-                                       val_data=self.val_data,
-                                       )
-                for k, v in score.items():
-                    self.log(f'{k}_ema_T{T}', v)
+        print(f'Evaluation programs: {self.conf.eval_programs}')
         """
         "inv<T>" = reconstruction with noise inversion
         """
@@ -676,7 +617,6 @@ class LitModel(pl.LightningModule):
                 conf = self.conf.clone()
                 # eval whole val dataset
                 conf.eval_num_images = len(self.val_data)
-                # {'lpips', 'mse', 'ssim'}
                 score = evaluate_lpips(sampler,
                                        self.ema_model,
                                        conf,
@@ -761,7 +701,9 @@ def train(conf: TrainConfig, gpus, nodes=1, mode: str = 'train'):
     print(f'Accelerator: {accelerator}, strategy: {strategy}, devices: {gpus}, num nodes: {nodes}')
 
     trainer = pl.Trainer(
-        max_steps=conf.total_samples // conf.batch_size_effective,
+        max_epochs=100,
+        limit_train_batches=conf.steps_per_epoch,
+        #max_steps=conf.total_samples // conf.batch_size_effective,
         # resume_from_checkpoint=checkpoint_model_path,  # older pytorch-lightning version (e.g. 2.0.6)
         # gpus=gpus,                               # older pytorch-lightning version (e.g. 2.0.6)
         devices=gpus,                              # only for newer pytorch-lightning versions (>2.1.1)
