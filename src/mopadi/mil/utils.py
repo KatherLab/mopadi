@@ -13,6 +13,8 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 import torch.optim as optim
 from torchvision import transforms
+from packaging.version import Version
+from torch.func import jacrev  # pyright: ignore[reportPrivateImportUsage]
 
 from sklearn.metrics import precision_recall_curve, roc_curve
 from sklearn.metrics import roc_auc_score
@@ -525,3 +527,86 @@ def test(model, loader_dict, target_label, out_dir, positive_weights):
     print(f"Total nr predictions: {len(total_df)}; positives: {len(total_pred_labs[total_pred_labs==1])}")
 
     return test_loss_avg
+
+
+def _gradcam_per_category(model, feats, coords):
+    """From STAMP codebase (v2.4.0)."""
+    feat_dim = -1
+
+    cam = (
+        (
+            feats
+            * jacrev(
+                lambda bags: model.forward(
+                    bags.unsqueeze(0),
+                    coords=coords.unsqueeze(0),
+                    mask=None,
+                ).squeeze(0)
+            )(feats)
+        )
+        .mean(feat_dim)  # type: ignore
+        .abs()
+    )
+
+    cam = torch.softmax(cam, dim=-1)
+
+    return cam.permute(-1, -2)
+
+
+# def get_top_tiles(model, feats, coords, k=15, cls_id=1, device='cuda:0'):
+def stamp_top_tiles(
+    model,
+    feats,
+    coords,
+    topk = 5,
+    device = 'cuda:0',
+):
+    """As in STAMP codebase (v2.4.0)."""
+    with torch.no_grad():
+        slide_logits = model(
+            feats.unsqueeze(0),          # [1, tile, feat]
+            coords=coords.unsqueeze(0),  # [1, tile, 2]
+            mask=None,
+        ).squeeze(0)                    # [category]
+
+        slide_probs = slide_logits.softmax(0)
+        target_cls = int(slide_probs.argmax().item())
+
+        tile_logits = model.forward(
+            feats.unsqueeze(-2),            # [tile, 1, feat]
+            coords=coords.unsqueeze(-2),    # [tile, 1, 2]
+            mask=torch.zeros(len(feats), 1, dtype=torch.bool, device=device),
+        )                                  # [tile, category]
+        tile_probs = torch.softmax(tile_logits, dim=1)  # [tile, category]
+
+    gradcam = _gradcam_per_category(
+        model=model,
+        feats=feats,
+        coords=coords,
+    ).detach()
+
+    top2 = tile_probs.topk(2)  # values/indices: [tile, 2]
+
+    category_support = torch.where(
+        top2.indices[:, 0] == target_cls,
+        tile_probs[:, target_cls] - top2.values[:, 1],
+        tile_probs[:, target_cls] - top2.values[:, 0],
+    )
+
+    attn_raw = gradcam[:, target_cls]
+    attention = attn_raw / attn_raw.max() if attn_raw.max() > 0 else attn_raw
+    category_score = category_support * attention
+    category_score = category_score / category_score.max() if category_score.max() > 0 else category_score
+
+    topk_scores, topk_idx = category_score.topk(topk)
+
+    res = {
+        "target_class": target_cls,
+        "slide_probs": slide_probs.detach().cpu(),
+        "topk_idx": topk_idx.detach().cpu(),
+        "topk_scores": topk_scores.detach().cpu(),
+        "topk_coords": coords[topk_idx].detach().cpu(),
+    }
+
+    print(res)
+    return res
