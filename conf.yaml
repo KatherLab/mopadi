@@ -59,6 +59,12 @@ autoenc_model:
   # is terminated, i.e., epoch number will depend on this number. Typically set high, and the training is stopped 
   # for examples after 72-98h on HPC when the FID score is low enough (<20 good; <10 excellent)
   total_samples: 200000000
+  steps_per_epoch: 5000
+
+  save_every_samples: 200000
+
+  # Number of samples the model 'sees' before reconstructions are performed and logged to tensorboard
+  reconstruct_every_samples: 4000000
 
   # Number of samples the model 'sees' before the evaluation step is performed (LPIPS, FID is computed)
   eval_every_samples: 1000000
@@ -80,11 +86,17 @@ latent_dpm:
   # Total samples - not the total number of tiles, but how many samples the model will see before the training 
   # is terminated, i.e., epoch number will depend on this number
   total_samples: 130000000
-  sample_every_samples: 4000000
+
+  # Number of samples the model 'sees' before the evaluation step is performed (LPIPS, FID is computed)
+  reconstruct_every_samples: 4000000
   steps_per_epoch: 5000
 
-  #batch_size: 124
-  #batch_size_eval: 32
+  # Number of samples the model 'sees' before the evaluation step is performed (LPIPS, FID is computed)
+  eval_every_samples: 200000
+  eval_ema_every_samples: 200000
+
+  #batch_size: 64
+  #batch_size_eval: 64
 
 
 # STEP 3: MIL CLASSIFIER (needed for the manipulation of images)
