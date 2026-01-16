@@ -27,3 +27,6 @@ images/example_norm_to_tumor/*test*
 src/mopadi/mil/test_*
 *.yaml
 images/Histo*
+exps/
+notebooks/dev*
+*backup*
