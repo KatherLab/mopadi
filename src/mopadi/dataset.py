@@ -18,7 +18,7 @@ from typing import Dict, Optional, List, Union
 from collections import defaultdict, OrderedDict
 
 import torch
-from torch.utils.data import Dataset, IterableDataset
+from torch.utils.data import Dataset, IterableDataset, Subset
 from torch.utils.data._utils.collate import default_collate
 from torchvision import transforms
 
@@ -91,10 +91,10 @@ def calculate_sampling_ratio(cohort_sizes, max_tiles_per_patient, cohort_size_th
     return sampling_ratios
 
 
-def load_test_patients(test_patients_file):
+def load_test_patients(test_patients_file_path):
     """Load test patient IDs from JSON file."""
-    print(f"Loading test patients from {test_patients_file}")
-    with open(test_patients_file, 'r') as file:
+    print(f"Loading test patients from {test_patients_file_path}")
+    with open(test_patients_file_path, 'r') as file:
         data = json.load(file)
         test_patients = {patient for patient in data['Test set patients']}
     print(f"Number of patients in the test set: {len(test_patients)}")
@@ -178,20 +178,20 @@ def load_tile_paths_cache(root_dirs, cache_pickle_tiles_path):
                 print(f"Data directories have changed! Invalidating tile cache: {cache_pickle_tiles_path}")
     return None
 
-def get_tile_paths(root_dirs, test_patients_file, split, max_tiles_per_patient, cohort_size_threshold, process_only_zips, cache_pickle_tiles_path, cache_cohort_sizes_path, force_recalculate_tile_paths=False):
+def get_tile_paths(root_dirs, test_patients_file_path, split, max_tiles_per_patient, cohort_size_threshold, process_only_zips, cache_pickle_tiles_path, cache_cohort_sizes_path, force_recalculate_tile_paths=False):
     """
     Get image tile paths, filtering based on train/test split if needed.
 
     Args:
         root_dir (List[str]): Path to root directory containing patient folders.
-        test_patients_file (str): JSON file with test set patient IDs.
+        test_patients_file_path (str): JSON file with test set patient IDs.
         split (str): Either 'train' or 'test' to filter images.
 
     Returns:
         List[str]: Sorted list of tile paths for the selected split.
     """
     random.seed(42)
-    test_patients = load_test_patients(test_patients_file) if test_patients_file else None
+    test_patients = load_test_patients(test_patients_file_path) if test_patients_file_path else None
     cohort_sizes, cohort_sizes_wsi = load_or_calculate_cohort_sizes(root_dirs, process_only_zips=process_only_zips, cache_file=cache_cohort_sizes_path)
     print(f"Cohort size (total n tiles): {dict(cohort_sizes)}")
     print(f"Cohort size (total n WSIs): {dict(cohort_sizes_wsi)}")
@@ -270,7 +270,7 @@ def extract_coords(filename):
     return np.array([-1, -1], dtype=np.float32)
 
 class TilesDataset(Dataset):
-    def __init__(self, root_dirs, test_patients_file=None, split='none', transform=None, max_tiles_per_patient=None, cohort_size_threshold=1_400_000, process_only_zips=False, cache_pickle_tiles_path=None, cache_cohort_sizes_path=None, force_recalculate_tile_paths=False):
+    def __init__(self, root_dirs, test_patients_file_path=None, split='none', transform=None, max_tiles_per_patient=None, cohort_size_threshold=1_400_000, process_only_zips=False, cache_pickle_tiles_path=None, cache_cohort_sizes_path=None, force_recalculate_tile_paths=False):
         """
         Args:
             root_dir (str): Path to the root directory containing patient folders.
@@ -278,7 +278,15 @@ class TilesDataset(Dataset):
         """
         self.root_dirs = root_dirs
         self.transform = transform
-        self.tile_paths = get_tile_paths(tuple(root_dirs), test_patients_file, split, max_tiles_per_patient, cohort_size_threshold, process_only_zips, cache_pickle_tiles_path, cache_cohort_sizes_path, force_recalculate_tile_paths)
+        self.tile_paths = get_tile_paths(tuple(root_dirs), test_patients_file_path, split, max_tiles_per_patient, cohort_size_threshold, process_only_zips, cache_pickle_tiles_path, cache_cohort_sizes_path, force_recalculate_tile_paths)
+        self._patient_to_indices = defaultdict(list)
+        for i, p in tqdm(enumerate(self.tile_paths), desc="Building patient to indices mapping...", total=len(self.tile_paths)):
+            # patient id is encoded in zip filename or parent dir, same logic as __getitem__
+            if ".zip:" in p:
+                patient_id = os.path.basename(p).split(".zip")[0].split(".")[0]
+            else:
+                patient_id = os.path.basename(os.path.dirname(p)).split(".")[0]
+            self._patient_to_indices[patient_id].append(i)
 
     def __len__(self):
         return len(self.tile_paths)
@@ -287,6 +295,10 @@ class TilesDataset(Dataset):
         tile_path = self.tile_paths[index]
         image = Image.open(tile_path).convert("RGB")
         return {"img": image, "filename": os.path.basename(tile_path), 'index': index}
+    
+    def subset_by_patient(self, patient_id: str):
+        idxs = self._patient_to_indices.get(patient_id, [])
+        return Subset(self, idxs)
 
 class DefaultTilesDataset(TilesDataset):
     def __init__(self, 
@@ -305,7 +317,7 @@ class DefaultTilesDataset(TilesDataset):
     ):
         super().__init__(
             root_dirs=root_dirs, 
-            test_patients_file=test_patients_file_path, 
+            test_patients_file_path=test_patients_file_path, 
             split=split, 
             max_tiles_per_patient=max_tiles_per_patient, 
             cohort_size_threshold=cohort_size_threshold,
@@ -358,22 +370,12 @@ class DefaultTilesDataset(TilesDataset):
                     image = self.transform(image)
                 return {'image': image, 'filename': tile_path}
 
-            # fallback: look deeper within same patient dir
-            patient_dir = os.path.dirname(tile_path)
-            for file in glob.glob(os.path.join(patient_dir, '**', '*'), recursive=True):
-                if fname in os.path.basename(file):
-                    print(f"Found: {file}")
-                    image = Image.open(file)
-                    if self.transform:
-                        image = self.transform(image)
-                    return {'image': image, 'filename': file}
-
 
 class ImageTileDatasetWithFeatures(DefaultTilesDataset):
     def __init__(self, 
                 root_dirs: list, 
                 feature_dirs: list,
-                test_patients_file: str = None,
+                test_patients_file_path: str = None,
                 split: str = 'none',
                 max_tiles_per_patient: int = None,
                 cohort_size_threshold: int = 1_400_000,
@@ -384,7 +386,7 @@ class ImageTileDatasetWithFeatures(DefaultTilesDataset):
                 process_only_zips: bool = False,
                 cache_pickle_tiles_path: str = None,
     ):
-        super().__init__(root_dirs=root_dirs, test_patients_file=test_patients_file, split=split, max_tiles_per_patient=max_tiles_per_patient, cohort_size_threshold=cohort_size_threshold, process_only_zips=process_only_zips, cache_pickle_tiles_path=cache_pickle_tiles_path)
+        super().__init__(root_dirs=root_dirs, test_patients_file_path=test_patients_file_path, split=split, max_tiles_per_patient=max_tiles_per_patient, cohort_size_threshold=cohort_size_threshold, process_only_zips=process_only_zips, cache_pickle_tiles_path=cache_pickle_tiles_path)
         self.feature_dirs = feature_dirs
         print("-----Dataset parameters-----")
         print(f"Image directories: {root_dirs}")
@@ -468,6 +470,81 @@ class ImageTileDatasetWithFeatures(DefaultTilesDataset):
             image = self.transform(image)
 
         return {"img": image, "feat": features[match_idx], "coords": tile_coords, "filename": tile_path}
+    
+    def get_tile(self, tile_path):
+        img = Image.open(tile_path).convert("RGB")
+        if self.transform:
+                img = self.transform(img)
+        return img
+
+    
+    def _patient_to_cohort(self, tile_path: str) -> str:
+        if ".zip:" in tile_path:
+            zip_path, _ = tile_path.split(":", 1)
+            return os.path.basename(os.path.dirname(zip_path))
+        return os.path.basename(os.path.dirname(os.path.dirname(tile_path)))
+
+    def _find_feature_file(self, patient_id: str, cohort: str) -> str:
+        """
+        Find patient feature file with trailing hash using glob.
+        """
+        candidates = []
+        for feature_dir in self.feature_dirs:
+            if cohort not in feature_dir:
+                continue
+
+            pattern = os.path.join(feature_dir, f"{patient_id}*.h5")
+            matches = glob.glob(pattern)
+            candidates.extend(matches)
+
+        if len(candidates) == 0:
+            raise FileNotFoundError(f"No feature file found for patient {patient_id}")
+
+        if len(candidates) > 1:
+            print(f"[WARNING] Multiple feature files found for {patient_id}, using first:")
+            for c in candidates:
+                print("  ", c)
+
+        return candidates[0]
+
+
+    def get_patient_features(
+        self,
+        patient_id: str,
+        return_coords: bool = True,
+        return_filenames: bool = True,
+    ):
+        idxs = self._patient_to_indices.get(patient_id, [])
+        if not idxs:
+            raise KeyError(f"No tiles found for patient_id={patient_id}")
+        cohort = self._patient_to_cohort(self.tile_paths[idxs[0]])
+        feat_path = self._find_feature_file(patient_id, cohort)
+
+        with h5py.File(feat_path, "r") as f:
+            feats = torch.from_numpy(f["feats"][:])   # [N, D]
+            coords = f["coords"][:]                   # [N, 2] typically
+
+        patient_tile_paths = [self.tile_paths[i] for i in idxs]
+        patient_tile_coords = np.asarray([extract_coords(p) for p in patient_tile_paths], dtype=np.float64)  # (M,2)
+
+        coords_f = np.asarray(coords, dtype=np.float64)  # (N,2)
+        fnames = []
+
+        atol = 1e-2  # tolerance in same units as coords (microns). Adjust if needed (e.g., 1e-3).
+        for c in coords_f:
+            d = np.abs(patient_tile_coords - c).max(axis=1)   # L-infinity distance
+            j = int(np.argmin(d))
+            if d[j] > atol:
+                raise KeyError(f"No tile_path match within atol={atol} for {patient_id} coord {tuple(c)} (best={d[j]:.6g})")
+            fnames.append(patient_tile_paths[j])
+
+        if return_coords and return_filenames:
+            return feats, coords, fnames
+        if return_coords:
+            return feats, coords
+        if return_filenames:
+            return feats, fnames
+        return feats
 
 
 class DefaultAttrDataset(Dataset):
@@ -810,7 +887,7 @@ class WDSTilesWithFeatures(WDSTiles):
                 raise KeyError(f"coords {(x, y)} not found in {h5_path}")
             idx = int(hits[0])
 
-        sample["feat"] = torch.from_numpy(np.asarray(payload["feat_ds"][idx]))
+        sample["feat"] = torch.from_numpy(np.asarray(payload["feat_ds"][idx])).float()
         return sample
 
     def _resolve_feat_dir(self, cohort: str) -> Optional[str]:
