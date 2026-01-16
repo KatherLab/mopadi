@@ -13,6 +13,23 @@ from multiprocessing import Process, Queue
 import os
 import shutil
 
+from mopadi.configs.config import *
+    
+
+def render_condition(conf: TrainConfig,
+                     model: BeatGANsAutoencModel,
+                     x_T,
+                     sampler: Sampler,
+                     cond):
+    """
+    Generate samples conditioned on extracted features.
+    """
+    model.eval()
+    assert conf.model_type.has_autoenc()
+    with torch.no_grad():
+        return sampler.sample(model=model, noise=x_T, cond=cond)
+
+
 
 def convert(x, format, quality=100):
     # to prevent locking!
