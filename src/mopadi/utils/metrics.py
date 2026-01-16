@@ -99,7 +99,7 @@ def evaluate_lpips(
     with torch.no_grad():
         scores = {
             'lpips_alex': [],
-            'lpips_fm': [],
+            'fm_mse': [],
             'mse': [],
             'ssim': [],
             'psnr': [],
@@ -118,24 +118,13 @@ def evaluate_lpips(
                     model_kwargs={'cond': cond})
                 x_T = x_T['sample']
             else:
-                x_T = torch.randn((len(imgs), 3, conf.img_size, conf.img_size),
-                                  device=device)
+                x_T = torch.randn((len(imgs), 3, conf.img_size, conf.img_size), device=device)
 
-            if conf.model_type == ModelType.ddpm:
-                # the case where you want to calculate the inversion capability of the DDIM model
-                assert use_inverted_noise
-                pred_imgs = render_uncondition(
-                    conf=conf,
-                    model=model,
-                    x_T=x_T,
-                    sampler=sampler,
-                )
-            else:
-                pred_imgs = render_condition(conf=conf,
-                                             model=model,
-                                             x_T=x_T,
-                                             cond=cond,
-                                             sampler=sampler)
+            pred_imgs = render_condition(conf=conf,
+                                         model=model,
+                                         x_T=x_T,
+                                         cond=cond,
+                                         sampler=sampler)
 
             scores['lpips_alex'].append(lpips_fn_alex.forward(imgs, pred_imgs).view(-1))
 
@@ -143,7 +132,7 @@ def evaluate_lpips(
             recon_feats = model.feat_extractor.extract_feats(norm_pred_imgs)
 
             lpips_custom = torch.nn.functional.mse_loss(cond, recon_feats, reduction='none').mean(dim=1)
-            scores['lpips_fm'].append(lpips_custom)
+            scores['fm_mse'].append(lpips_custom)
 
             norm_imgs = (imgs + 1) / 2
             
@@ -178,7 +167,6 @@ def evaluate_lpips(
     for key in scores.keys():
         scores[key] = torch.cat(outs[key]).mean().item()
 
-    # {'lpips_alex', 'lpips_fm', 'mse', 'ssim'}
     return scores
 
 
