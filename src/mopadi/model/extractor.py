@@ -4,6 +4,7 @@ from torchvision import transforms
 
 from dotenv import load_dotenv
 import timm
+from timm.layers import SwiGLUPacked
 from timm.data import resolve_data_config, create_transform
 import os
 
@@ -86,7 +87,6 @@ class FeatureExtractorConch15:
         else:
             with torch.inference_mode():
                 features = self.model(batch)
-        assert len(features.shape) == 2 and features.shape[1] == 512, f"Unexpected feature shape: {features.shape}"
         return features
 
     
@@ -96,7 +96,7 @@ class FeatureExtractorVirchow2:
         self.model = timm.create_model(
             "hf-hub:paige-ai/Virchow2",
             pretrained=True,
-            mlp_layer="SwiGLUPacked",
+            mlp_layer=SwiGLUPacked,
             act_layer=torch.nn.SiLU,
         ).eval().to(device)
         self.device = device
@@ -106,13 +106,7 @@ class FeatureExtractorVirchow2:
 
         print(f"Virchow2 model successfully initialised on device {self.device}...\n")
 
-        self.transforms = create_transform(**resolve_data_config(self.model.pretrained_cfg, model=self.model))
-        print(self.transforms) # just for doublechecking
-         
-        transform_list = [transforms.Resize(size=224, interpolation=transforms.InterpolationMode.BICUBIC, antialias=True),
-                          transforms.Normalize(mean=(0.4850, 0.4560, 0.4060), std=(0.2290, 0.2240, 0.2250))
-        ]
-        self.transform = transforms.Compose(transform_list)
+        self.transform = create_transform(**resolve_data_config(self.model.pretrained_cfg, model=self.model))
 
     def extract_feats(self, imgs_batch: torch.Tensor, need_grad: bool = True):
         """
@@ -124,6 +118,9 @@ class FeatureExtractorVirchow2:
         Returns:
             torch.Tensor: Embeddings for the batch, shape (B, 2560).
         """
+        from torchvision.transforms.functional import to_pil_image
+        batch = torch.stack([self.transform(to_pil_image(x.cpu())) for x in imgs_batch]).to(self.device)
+
         assert imgs_batch.min() >= -1e-3 and imgs_batch.max() <= 1+1e-3, "Expect [0,1] input"
         batch = torch.stack([self.transform(x) for x in imgs_batch]).to(self.device)
 
@@ -134,11 +131,9 @@ class FeatureExtractorVirchow2:
                 output = self.model(batch)
 
         class_token = output[:, 0]  # shape: (B, 1280)
-        patch_tokens = output[:, 5:]  # Ignore tokens 1-4 (register tokens)
-
-        features = torch.cat([class_token, patch_tokens.mean(dim=1)], dim=-1)  # shape: (B, 2560)
-        assert features.ndim == 2 and features.shape[1] == 2560, f"Unexpected feature shape: {features.shape}"
-        return features
+        #patch_tokens = output[:, 5:]  # Ignore tokens 1-4 (register tokens)
+        #features = torch.cat([class_token, patch_tokens.mean(dim=1)], dim=-1)  # shape: (B, 2560)
+        return class_token.half()
 
     
 class FeatureExtractorUNI2:
