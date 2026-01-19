@@ -8,6 +8,8 @@ __pycache__/
 src/mopadi/data_prep/clini_tables/
 .DS_Store?
 ._*
+*.slurm
+*.yaml
 temp/
 outs/
 evals/
