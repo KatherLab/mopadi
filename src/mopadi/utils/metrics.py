@@ -18,7 +18,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torchmetrics.image import MultiScaleStructuralSimilarityIndexMeasure
 
-from mopadi.utils.renderer import *
+from mopadi.utils.misc import render_condition
 from mopadi.configs.config import *
 from mopadi.diffusion import Sampler
 from mopadi.utils.dist_utils import *

@@ -1,8 +1,4 @@
 from mopadi.train_diff_autoenc import *
-from dotenv import load_dotenv
-
-load_dotenv()
-ws_path = os.getenv('WORKSPACE_PATH')
 
 
 def ddpm():
@@ -69,8 +65,8 @@ def default_autoenc(config):
     data_config = config.get('data', {})
     autoenc_config = config.get('autoenc_model', {})
 
-    conf.data_dirs = list(data_config.get('data_dirs', None))
-    conf.feature_dirs = list(data_config.get('feature_dirs', None))
+    conf.data_dirs = list(data_config.get('data_dirs', []))
+    conf.feature_dirs = list(data_config.get('feature_dirs', []))
     conf.feat_extractor = data_config.get('feature_extractor', None)
     #conf.test_patients_file_path = data_config.get('test_patients_file_path', None)
     #conf.process_only_zips = data_config.get('process_only_zips', False)
@@ -163,7 +159,7 @@ def tcga_crc_autoenc():
     conf.warmup = 0
     conf.total_samples = 70_000_000
     conf.sample_size = 16
-    conf.img_size = 448
+    conf.img_size = 512
     conf.batch_size = 32
     conf.batch_size_eval = 32
     conf.net_ch = 128

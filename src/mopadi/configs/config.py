@@ -134,8 +134,9 @@ class TrainConfig(BaseConfig):
     eval_path: str = None
     base_dir: str = 'checkpoints'
     use_cache_dataset: bool = False
-    data_cache_dir: str = os.path.join(ws_path, 'cache')
-    work_cache_dir: str = os.path.join(ws_path, 'mopadi_cache')
+    data_cache_dir: str = 'cache'
+    work_cache_dir: str = 'mopadi_cache'
+    load_pretrained_autoenc: bool = False
     # to be overridden
     name: str = ''
 
