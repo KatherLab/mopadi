@@ -18,6 +18,7 @@ evals/
 src/mopadi/utils/dimred/
 src/mopadi/utils/extract-old/
 notebooks/dev/*
+notebooks/rev*
 src/mopadi/utils/reconstruct_1k_images_*.py
 **/extval_classifier_*.py
 **/get_top_tiles_*.py
@@ -28,5 +29,6 @@ src/mopadi/mil/test_*
 *.yaml
 images/Histo*
 exps/
-notebooks/dev*
 *backup*
+.venv/
+
