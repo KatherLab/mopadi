@@ -1,7 +1,9 @@
 from torchvision import transforms
 import torch
-from configs.templates import *
-from configs.templates_cls import *
+import os
+
+from mopadi.configs.templates import *
+from mopadi.configs.templates_cls import *
 
 
 class ImageEncoder:

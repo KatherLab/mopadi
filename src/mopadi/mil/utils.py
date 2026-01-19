@@ -79,9 +79,10 @@ class FeatDataset(Dataset):
                 self.df = pd.read_csv(annot_file)
         except Exception:
             self.df = pd.read_excel(annot_file)
-        self.df['PATIENT'] = self.df['PATIENT'].apply(lambda patient: "-".join(patient.split("-")[:3]))
+        self.df['PATIENT'] = self.df['PATIENT'].apply(lambda patient: "-".join(patient.split("-")[:fname_index]))
 
         valid_feat_list = []
+        skipped = 0
         for path in feat_list:
             pat = "-".join(path.split("/")[-1].split(".h5")[0].split("-")[:fname_index])
             if pat in self.df.PATIENT.values:
@@ -90,8 +91,11 @@ class FeatDataset(Dataset):
                     valid_feat_list.append(path)
                 else:
                     print(f"Skipping patient {pat}: missing target label.")
+                    skipped += 1
             else:
                 print(f"Skipping patient {pat}: not found in annotation file.")
+                skipped += 1
+        print( f"Total skipped patients: {skipped} out of {len(feat_list)}")
         self.feat_list = valid_feat_list
         self.indices = indices if indices is not None else list(range(len(self.feat_list)))
 
@@ -127,7 +131,7 @@ class FeatDataset(Dataset):
                     
     def __getitem__(self, idx):
         actual_idx = self.indices[idx]
-        if idx >= len(self.indices):
+        if idx >= len(self.indices):    
             raise IndexError(f"Index {idx} out of bounds for indices of size {len(self.indices)}")
         feat_path = self.feat_list[actual_idx]
         pat = "-".join(feat_path.split("/")[-1].split(".h5")[0].split("-")[:self.fname_index])
@@ -490,38 +494,38 @@ def test(model, loader_dict, target_label, out_dir, positive_weights):
     ax_roc.set_aspect("equal")
     ax_roc.set_title(f'AUC = {np.mean(aurocs):.3f}$\pm${np.std(aurocs):.3f}', fontsize=28)
 
-    #fig_roc.savefig(f"{out_dir}/ROC-mil-{target_label}.pdf",dpi=300)
     fig_roc.savefig(f"{out_dir}/ROC-mil-{target_label}.png", dpi=300)
     fig_roc.savefig(f"{out_dir}/ROC-mil-{target_label}.svg")
     #fig_prc.savefig(f"{out_dir}/PRC-mil-{target_label}.pdf",dpi=300)
     
-    pred_dict = {"pat_ids":loader_dict["total"].dataset.get_patient_ids(),"preds":[], target_label:[]}
-    all_predicted_labels = []
-    # all_targets = []
-    
-    for feats, targets, _ in tqdm(loader_dict["total"],leave=False):
-        if torch.cuda.is_available():
-            feats = feats.cuda()
-            #targets = nn.functional.one_hot(targets,num_classes=num_classes).cuda().to(torch.int64)
-            targets = targets.cuda()
-
-        with torch.no_grad():
-            logits = model(feats)
-            #loss = criterion(logits,targets)
-            test_loss += loss.item()
+    if "pred_total" in loader_dict:
+        pred_dict = {"pat_ids":loader_dict["total"].dataset.get_patient_ids(),"preds":[], target_label:[]}
+        all_predicted_labels = []
+        # all_targets = []
         
-            _, predicted_labels = torch.max(logits, dim=1)
-            #total_test_correct += (predicted_labels == targets).sum().item()
+        for feats, targets, _ in tqdm(loader_dict["total"],leave=False):
+            if torch.cuda.is_available():
+                feats = feats.cuda()
+                #targets = nn.functional.one_hot(targets,num_classes=num_classes).cuda().to(torch.int64)
+                targets = targets.cuda()
 
-            predicted_probs = nn.functional.softmax(logits, dim=1)
-            pred_dict["preds"].extend(predicted_probs[:,1].cpu().numpy().flatten().tolist())
-            pred_dict[target_label].extend(targets.cpu().numpy().flatten().tolist())
-            all_predicted_labels.append(predicted_labels.cpu().numpy().flatten().tolist())
-            # all_predicted_probs.append(predicted_probs[:, 1].cpu().numpy())  
-            # all_targets.append(targets.cpu().numpy())
-    total_pred_labs = np.concatenate(all_predicted_labels)
-    total_df = pd.DataFrame(pred_dict)
-    total_df.to_csv(f"{out_dir}/PMA_mil_preds_total.csv",index=False)
-    print(f"Total nr predictions: {len(total_df)}; positives: {len(total_pred_labs[total_pred_labs==1])}")
+            with torch.no_grad():
+                logits = model(feats)
+                #loss = criterion(logits,targets)
+                test_loss += loss.item()
+            
+                _, predicted_labels = torch.max(logits, dim=1)
+                #total_test_correct += (predicted_labels == targets).sum().item()
+
+                predicted_probs = nn.functional.softmax(logits, dim=1)
+                pred_dict["preds"].extend(predicted_probs[:,1].cpu().numpy().flatten().tolist())
+                pred_dict[target_label].extend(targets.cpu().numpy().flatten().tolist())
+                all_predicted_labels.append(predicted_labels.cpu().numpy().flatten().tolist())
+                # all_predicted_probs.append(predicted_probs[:, 1].cpu().numpy())  
+                # all_targets.append(targets.cpu().numpy())
+        total_pred_labs = np.concatenate(all_predicted_labels)
+        total_df = pd.DataFrame(pred_dict)
+        total_df.to_csv(f"{out_dir}/PMA_mil_preds_total.csv",index=False)
+        print(f"Total nr predictions: {len(total_df)}; positives: {len(total_pred_labs[total_pred_labs==1])}")
 
     return test_loss_avg

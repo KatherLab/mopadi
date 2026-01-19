@@ -1,16 +1,15 @@
 import os
-
-from configs.templates import *
-from configs.templates_cls import *
-# from manipulate import *
 import numpy as np
 import h5py
 import pandas as pd
 from tqdm import tqdm
-from encode import ImageEncoder
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 from collections import defaultdict
+
+from mopadi.configs.templates import *
+from mopadi.configs.templates_cls import *
+from mopadi.utils.encode import ImageEncoder
 
 load_dotenv()
 ws_path = os.getenv("WORKSPACE_PATH")
@@ -75,23 +74,22 @@ def main():
     # BRCA
     #autoenc_path = "checkpoints/brca/last.ckpt"
     #images_dir = f"{ws_path}/data/TCGA-BRCA/tiles-test-from-ganymede"
-    #save_dir = f"{ws_path}/extracted_features/TCGA-BRCA"
+    #save_dir = f"{ws_path}/features/TCGA-BRCA"
     #conf = tcga_brca_autoenc()
     #imgs_ids_file = 'temp/patient_image_ids_dict_BRCA2-all.txt'
 
     # CRC
-    autoenc_path = "checkpoints/crc/tcga_crc_512/last.ckpt"
-    #lmdb_path = "/mnt/bulk-dgx/laura/mopadi/datasets/tcga_crc_512_lmdb-train"
-    images_dir = "/mnt/bulk-mars/laura/diffae/data/TCGA-CRC/512x512_tumor_test"
-    save_dir = f"{ws_path}/extracted_features/TCGA-CRC/512x512-test"
-    conf = tcga_crc_512_autoenc()
+    # downloaded from Huggingface
+    autoenc_path = "/home/laura/.cache/huggingface/hub/models--KatherLab--MoPaDi/snapshots/5d8e775e24473c5d8f4c0c57fd5c865c3c2a4aab/crc_512_model/autoenc.ckpt"
+    images_dir = f"{ws_path}/diffae/data/TCGA-CRC/512x512_tumor_test"
+    save_dir = f"{ws_path}/features/TCGA-CRC/512x512-test"
+    conf = tcga_crc_autoenc()
     imgs_ids_file = 'temp/crc_patient_image_ids_dict_test.txt'
 
 
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    encoder = ImageEncoder(autoenc_config=conf, autoenc_path=autoenc_path, device="cuda:1")
     dataset = ImageFolder(images_dir)
     print(f"Total images: {len(dataset)}")
 
@@ -103,13 +101,14 @@ def main():
         patient_image_ids = defaultdict(list)
         for i in tqdm(range(len(dataset)), total=len(dataset), desc="Getting patients IDs"):
             #print(dataset.paths[i])
-            patient_name = str(dataset.paths[i]).split("/")[8]
+            patient_name = str(dataset.paths[i]).split("/")[-2].split(".")[0]
             #print(patient_name)
             patient_image_ids[patient_name].append(i)
         patient_image_ids = dict(patient_image_ids)
         with open(imgs_ids_file, 'w') as f:
             json.dump(patient_image_ids, f)
 
+    encoder = ImageEncoder(autoenc_config=conf, autoenc_path=autoenc_path, device="cuda:1")
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         futures = []
