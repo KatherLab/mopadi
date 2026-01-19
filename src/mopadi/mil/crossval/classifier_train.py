@@ -71,10 +71,16 @@ def run_crossval(conf):
         json.dump(vars(conf), config_file, indent=4)
 
     print(f"Running {conf.nr_folds}-fold cross-validation...")
+
+    if conf.target_dict is not None:
+        classes = conf.target_dict.values()
+    else:
+        classes = sorted(clini_df[conf.target_label].dropna().unique())
     print(f"Classes: {np.array(list(classes))}")
+
     group_kf = GroupKFold(n_splits=conf.nr_folds)
 
-    train_val_dataset = FeatDataset(feat_list=all_train_files, annot_file=conf.clini_table, target_label=conf.target_label, target_dict=conf.target_dict, fname_index=conf.fname_index)
+    #train_val_dataset = FeatDataset(feat_list=all_train_files, annot_file=conf.clini_table, target_label=conf.target_label, target_dict=conf.target_dict, fname_index=conf.fname_index)
     test_dataset = FeatDataset(feat_list=test_files, annot_file=conf.clini_table, target_label=conf.target_label, target_dict=conf.target_dict, fname_index=conf.fname_index)
     full_dataset = FeatDataset(feat_list=all_train_files+test_files, annot_file=conf.clini_table, target_label=conf.target_label, target_dict=conf.target_dict, fname_index=conf.fname_index)
 
@@ -107,11 +113,14 @@ def run_crossval(conf):
             json.dump(patient_split_info, pat_split_file, indent=4)
 
         print(f"Train set positives: {train_dataset.get_nr_pos(indices=train_dataset.indices)}; negatives: {train_dataset.get_nr_neg(indices=train_dataset.indices)}")
-        print(f"Val set positives: {train_dataset.get_nr_pos(indices=val_dataset.indices)}; negatives: {train_dataset.get_nr_neg(indices=val_dataset.indices)}")
+        print(f"Val set positives: {val_dataset.get_nr_pos(indices=val_dataset.indices)}; negatives: {val_dataset.get_nr_neg(indices=val_dataset.indices)}")
         print(f"Test set positives: {test_dataset.get_nr_pos()}; negatives: {test_dataset.get_nr_neg()}")
 
         positive_weights = compute_class_weight('balanced', classes=np.array(list(classes)), y=train_dataset.get_targets(indices=train_dataset.indices))
         print(f"{positive_weights=}")
+
+        with open(os.path.join(out_fold_dir, "class_weights.json"), "w") as f:
+            json.dump({"class_weights": positive_weights.tolist(), "target_dict": conf.target_dict}, f, indent=2)
 
         model = Classifier(dim=conf.dim, num_heads=conf.num_heads, num_seeds=conf.num_seeds, num_classes=len(classes))
 
