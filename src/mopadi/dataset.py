@@ -147,6 +147,7 @@ def load_or_calculate_cohort_sizes(root_dirs, process_only_zips, cache_file, for
             elif os.path.isdir(patient_path) and not process_only_zips:
                 exts = ('.jpg', '.jpeg', '.png', '.tif', '.tiff')
                 num_tiles = len([f for f in os.listdir(patient_path) if f.lower().endswith(exts)])
+                wsi_count+=1
             else:
                 continue
 
@@ -362,7 +363,7 @@ class DefaultTilesDataset(TilesDataset):
 
     def get_images_by_patient_and_fname(self, patient_name, fname):
         # for simple cases, when we have patient folders/zips full of tiles
-        for tile_path in self.tile_paths:
+        if patient_name in tile_path:
             if fname in tile_path:
                 print(f"Found: {tile_path}")
                 image = Image.open(tile_path)
