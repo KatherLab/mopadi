@@ -9,7 +9,6 @@ src/mopadi/data_prep/clini_tables/
 .DS_Store?
 ._*
 temp/
-*slurm*
 outs/
 evals/
 *.sh
