@@ -55,7 +55,7 @@ def autoenc_base():
     conf.net_ch = 64
     conf.net_enc_channel_mult = (1, 2, 4, 8, 8)
     conf.net_enc_pool = 'adaptivenonzero'
-    conf.sample_size = 32    # change here to 16 for 512x512 model
+    conf.sample_size = 16    # change here to 16 for 512x512 model
     conf.T_eval = 20
     conf.T = 1000
     conf.make_model_conf()
@@ -103,6 +103,7 @@ def texture100k_autoenc():
     conf.base_dir = 'checkpoints/texture100k'
     conf.warmup = 0
     conf.total_samples = 200_000_000
+    conf.sample_size = 32
     conf.img_size = 224
     conf.batch_size = 64
     conf.batch_size_eval = 64
@@ -162,6 +163,7 @@ def pancancer_autoenc():
     conf.base_dir = '/checkpoints/pancancer/autoenc'
     conf.warmup = 0
     conf.total_samples = 200_000_000
+    conf.sample_size = 32
     conf.img_size = 256
     conf.batch_size = 48  # had to reduce due to one broken gpu on dgx
     conf.batch_size_eval = 48  # had to reduce due to one broken gpu on dgx

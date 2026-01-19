@@ -174,5 +174,6 @@ def texture100k_linear_cls():
         "Texture100k",
         f"{ws_path}/mopadi/checkpoints/texture100k/{texture100k_autoenc().name}/last.ckpt",
     )
+    conf.id_to_cls = ['ADI', 'BACK', 'DEB', 'LYM', 'MUC', 'MUS', 'NORM', 'STR', 'TUM']
     conf.name = "texture100k_linear_cls"
     return conf
