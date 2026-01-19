@@ -92,8 +92,7 @@ class ClsModel(pl.LightningModule):
                 print('Loading pre-extracted features of the encoder...')
                 state = torch.load(feats_infer_path)
                 self.conds = state['conds']
-                self.register_buffer('conds_mean',
-                                     state['conds_mean'][None, :])
+                self.register_buffer('conds_mean', state['conds_mean'][None, :])
                 self.register_buffer('conds_std', state['conds_std'][None, :])
             else:
                 self.conds_mean = None

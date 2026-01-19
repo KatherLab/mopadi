@@ -4,16 +4,17 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 import pandas as pd
 import numpy as np
 from PIL import Image
+from dotenv import load_dotenv
 
 import torch
 from torchvision import transforms
 from torch.utils.data import DataLoader
-from linear_clf.train_linear_cls import ClsModel
-from mil.utils import *
 
-from configs.templates import *
-from configs.templates_cls import *
-from dotenv import load_dotenv
+from mopadi.linear_clf.train_linear_cls import ClsModel
+from mopadi.mil.utils import *
+from mopadi.configs.templates import *
+from mopadi.configs.templates_cls import *
+
 
 load_dotenv()
 ws_path = os.getenv("WORKSPACE_PATH")
@@ -30,6 +31,7 @@ class Tester():
 ):
         self.device = device
         self.man_amp = man_amp
+        self.cls_config = cls_config
 
         # load diffusion autoencoder
         self.model = LitModel(model_config)
@@ -39,7 +41,7 @@ class Tester():
 
         # load the classifier
         self.cls_model = ClsModel(cls_conf)
-        state = torch.load(cls_checkpoint_dir, map_location="cpu")
+        state = torch.load(cls_checkpoint_dir, map_location="cpu", weights_only=False)
         print("latent step:", state["global_step"])
         self.cls_model.load_state_dict(state["state_dict"], strict=False)
         self.cls_model.to(device)
@@ -47,16 +49,16 @@ class Tester():
 
     def test(self, image, save_dir):
 
-        target_list = TextureAttrDataset.id_to_cls
+        target_list = self.cls_config.id_to_cls
 
         with torch.no_grad():
             self.model.ema_model.eval()
             self.cls_model.ema_classifier.eval()
 
-            latent = self.model.ema_model.encoder(image.cuda().float())
+            latent = self.model.ema_model.encoder(image.to(self.device).float())
             latent = self.cls_model.normalize(latent)
             output = self.cls_model.ema_classifier.forward(latent)                
-            pred = torch.softmax(output, dim=1)
+            pred = torch.sigmoid(output)
             _, max_index = torch.max(pred, 1)
             predicted_class = target_list[max_index.item()]
 

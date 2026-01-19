@@ -1,12 +1,13 @@
-from torchvision import transforms
-import torch
-from torchmetrics.image import MultiScaleStructuralSimilarityIndexMeasure
 from skimage.metrics import structural_similarity, mean_squared_error
 import cv2
 
-from src.mopadi.linear_clf.train_linear_cls import ClsModel
-from src.mopadi.configs.templates import *
-from src.mopadi.configs.templates_cls import *
+import torch
+from torchvision import transforms
+from torchmetrics.image import MultiScaleStructuralSimilarityIndexMeasure
+
+from mopadi.linear_clf.train_linear_cls import ClsModel
+from mopadi.configs.templates import *
+from mopadi.configs.templates_cls import *
 
 
 class ImageManipulator:
@@ -58,7 +59,7 @@ class ImageManipulator:
         save_fname = self.image_dataset[image_index]["filename"].split(".")[0] + "_original.png"
         save_fname_manip = self.image_dataset[image_index]["filename"].split(".")[0] + f"_manipulated_to_{target_class}_amplitude_{manipulation_amplitude}.png"
         
-        return self.manipulate(batch, target_class, manipulation_amplitude, save_path, save_fname_ori, save_fname_manip, T_step, T_inv)
+        return self.manipulate(batch, target_class, manipulation_amplitude, save_path, save_fname, save_fname_manip, T_step, T_inv)
 
     def manipulate_image(self, 
                         img, 
@@ -182,6 +183,23 @@ class ImageManipulator:
     def save_image(self, image_tensor, save_path):
         image = transforms.ToPILImage()(image_tensor.cpu().squeeze(0))
         image.save(save_path)
+
+    def predict_path(self, img_path: str) -> Tuple[str, np.ndarray]:
+        img = Image.open(img_path).convert("RGB")
+        tfm = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+        ])
+        x = tfm(img).unsqueeze(0).to(self.device)
+
+        with torch.no_grad():
+            feats  = self.model.ema_model.encoder(x)
+            feats  = self.classifier.normalize(feats)
+            logits = self.classifier.ema_classifier(feats)
+            probs  = torch.sigmoid(logits).cpu().numpy().flatten()
+
+        pred_lbl = self.cls_config.id_to_cls[int(probs.argmax())]
+        return pred_lbl, probs
 
 
 def compute_structural_similarity(reconstructed_img, image_original_tensor, out_file_dir=None):
