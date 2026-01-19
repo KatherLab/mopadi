@@ -29,12 +29,7 @@ class ImageManipulator:
                        conf_cls,
                        mil_path,
                     ):
-        
-        cls_model = Classifier(conf_cls.dim, conf_cls.num_heads, conf_cls.num_seeds, conf_cls.num_classes)
-        weights = torch.load(mil_path)
-        cls_model.load_state_dict(weights)
         cls_model = cls_model.to(self.device)
-
         cls_model.eval()
         return cls_model
 
