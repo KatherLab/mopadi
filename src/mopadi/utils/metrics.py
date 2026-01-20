@@ -233,16 +233,14 @@ def evaluate_fid(
     with torch.no_grad():
         if conf.model_type == ModelType.autoencoder:
             # evaluate autoencoder (given the cond & random noise)
-            # to make the FID fair, autoencoder must not see the validation dataset
-            # also shuffle to make it closer to unconditional generation
-            train_loader = make_subset_loader(conf,
-                                                dataset=train_data,
-                                                batch_size=batch_size,
-                                                shuffle=True,
-                                                parallel=True)
+            val_loader = make_subset_loader(conf,
+                                            dataset=val_data,
+                                            batch_size=batch_size,
+                                            shuffle=True,
+                                            parallel=True)
 
             i = 0
-            for batch in tqdm(train_loader, desc='reconstructing images from noise & cond'):
+            for batch in tqdm(val_loader, desc='reconstructing images from noise & cond'):
                 imgs = batch['img'].to(device)
                 cond = batch['feat'].to(device)
 

@@ -197,16 +197,6 @@ class GaussianDiffusionBeatGans:
 
                 terms["loss"] = total_loss
 
-            #elif self.conf.lpips_loss:
-            #    lpips_loss_fn = lpips.LPIPS(net='alex').to(device)
-                
-            #    pred_xstart_denorm = (terms['pred_xstart'] + 1) / 2
-            #    x_start_denorm = (x_start + 1) / 2
-            #    lpips_loss = lpips_loss_fn(pred_xstart_denorm, x_start_denorm).mean()
-            #    terms["lpips_loss"] = lpips_loss
-            #    total_loss += self.conf.lambda_lpips * lpips_loss
-            #    terms["loss"] = total_loss
-
             else:
                 terms["loss"] = base_loss
 

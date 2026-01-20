@@ -67,6 +67,8 @@ def default_autoenc(config):
 
     conf.data_dirs = list(data_config.get('data_dirs', []))
     conf.feature_dirs = list(data_config.get('feature_dirs', []))
+    conf.data_val_dirs = list(data_config.get('data_val_dirs', []))
+    conf.feature_val_dirs = list(data_config.get('feature_val_dirs', []))
     conf.feat_extractor = data_config.get('feature_extractor', None)
     #conf.test_patients_file_path = data_config.get('test_patients_file_path', None)
     #conf.process_only_zips = data_config.get('process_only_zips', False)
@@ -124,8 +126,19 @@ def default_autoenc(config):
 
     conf.feat_loss = autoenc_config.get('feat_loss', False)
     conf.lambda_feat = autoenc_config.get('lambda_feat', 0.3)
-
     conf.lambda_lp = autoenc_config.get('lambda_lp', 0.1)
+
+    # Additional training parameters
+    conf.lr = autoenc_config.get('lr', 1e-4)
+    conf.weight_decay = autoenc_config.get('weight_decay', 0.0)
+    conf.dropout = autoenc_config.get('dropout', 0.1)
+    conf.num_workers = autoenc_config.get('num_workers', 6)
+    conf.grad_clip = autoenc_config.get('grad_clip', 1.0)
+
+    # Checkpointing
+    conf.save_every_samples = autoenc_config.get('save_every_samples', 100_000)
+    conf.reconstruct_every_samples = autoenc_config.get('reconstruct_every_samples', 20_000)
+    conf.eval_num_images = autoenc_config.get('eval_num_images', 5_000)
 
     conf.name = 'autoenc'
     conf.make_model_conf()

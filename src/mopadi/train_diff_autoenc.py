@@ -129,7 +129,29 @@ class LitModel(pl.LightningModule):
         ##############################################
 
         self.train_data = self.conf.make_dataset()
-        self.val_data = self.train_data
+
+        # Create validation dataset if separate dirs are provided
+        if hasattr(self.conf, 'data_val_dirs') and self.conf.data_val_dirs:
+            # Temporarily swap to val dirs and create val dataset
+            original_data_dirs = self.conf.data_dirs
+            original_feature_dirs = self.conf.feature_dirs
+
+            self.conf.data_dirs = self.conf.data_val_dirs
+            self.conf.feature_dirs = self.conf.feature_val_dirs if hasattr(self.conf, 'feature_val_dirs') and self.conf.feature_val_dirs else self.conf.feature_dirs
+
+            self.val_data = self.conf.make_dataset()
+
+            # Restore original dirs
+            self.conf.data_dirs = original_data_dirs
+            self.conf.feature_dirs = original_feature_dirs
+
+            if self.global_rank == 0:
+                print(f"Using validation data from {len(self.conf.data_val_dirs)} shard(s)")
+
+        else:
+            self.val_data = self.train_data
+            if self.global_rank == 0:
+                print("WARNING: No separate validation set provided, using training data for validation")
 
         if self.global_rank == 0:
             print(f"[conf] feat_extractor = {self.conf.feat_extractor!r}")
@@ -242,7 +264,7 @@ class LitModel(pl.LightningModule):
         given an input, calculate the loss function
         no optimization at this stage.
         """
-        with autocast(device_type='cuda', enabled=False):
+        with autocast(device_type='cuda', enabled=self.conf.fp16):
 
             imgs = batch['img'].to(self.device)
             feats = batch['feat'].to(self.device, dtype=torch.float32)
@@ -265,7 +287,7 @@ class LitModel(pl.LightningModule):
                 raise NotImplementedError()
 
             loss = losses['loss'].mean()
-            # divide by accum batches to make the accumulated gradient exact!
+
             for key in ['loss', 'vae', 'mmd', 'chamfer', 'arg_cnt']:
                 if key in losses:
                     losses[key] = self.all_gather(losses[key]).mean()

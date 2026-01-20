@@ -225,6 +225,7 @@ class TrainConfig(BaseConfig):
                 do_normalize=self.do_normalize,
                 do_resize=self.do_resize,
                 feat_extractor=self.feat_extractor,
+                img_size=self.img_size,
             )
         else:
             if self.data_name == 'tcga_crc_512_conch_nolmdb' or self.data_name == 'tcga_brca_512_conch_nolmdb':
