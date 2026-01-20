@@ -146,7 +146,7 @@ class LitModel(pl.LightningModule):
             self.conf.feature_dirs = original_feature_dirs
 
             if self.global_rank == 0:
-                print(f"Using validation data from {len(self.conf.data_val_dirs)} shard(s)")
+                print(f"Using validation data from {self.conf.data_val_dirs}")
 
         else:
             self.val_data = self.train_data

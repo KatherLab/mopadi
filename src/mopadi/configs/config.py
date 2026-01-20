@@ -218,10 +218,20 @@ class TrainConfig(BaseConfig):
 
     def make_dataset(self, use_web_dataset=True, **kwargs):
         urls = expand_shards(self.data_dirs)
+
+        # Expand glob patterns in feature_dirs
+        expanded_feature_dirs = []
+        for p in self.feature_dirs:
+            if os.path.isdir(p):
+                expanded_feature_dirs.append(p)
+            else:
+                matches = sorted(glob.glob(p))
+                expanded_feature_dirs.extend(matches if matches else [p])
+
         if use_web_dataset:
             return WDSTilesWithFeatures(
                 shards=urls,
-                feature_dirs=self.feature_dirs,
+                feature_dirs=expanded_feature_dirs,
                 do_normalize=self.do_normalize,
                 do_resize=self.do_resize,
                 feat_extractor=self.feat_extractor,
