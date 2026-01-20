@@ -8,14 +8,17 @@ __pycache__/
 src/mopadi/data_prep/clini_tables/
 .DS_Store?
 ._*
+*.slurm
+*.yaml
 temp/
 outs/
 evals/
 *.sh
 *.csv
-*/dimred/
-*/extract-old/
-*dev*
+src/mopadi/utils/dimred/
+src/mopadi/utils/extract-old/
+notebooks/dev/*
+notebooks/rev*
 src/mopadi/utils/reconstruct_1k_images_*.py
 **/extval_classifier_*.py
 **/get_top_tiles_*.py
@@ -32,3 +35,4 @@ jobs/
 *debug*
 notebooks/dev*
 *backup*
+.venv/

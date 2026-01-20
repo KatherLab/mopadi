@@ -1,8 +1,4 @@
 from mopadi.train_diff_autoenc import *
-from dotenv import load_dotenv
-
-load_dotenv()
-ws_path = os.getenv('WORKSPACE_PATH')
 
 
 def ddpm():
@@ -55,7 +51,7 @@ def autoenc_base():
     conf.net_ch = 64
     conf.net_enc_channel_mult = (1, 2, 4, 8, 8)
     conf.net_enc_pool = 'adaptivenonzero'
-    conf.sample_size = 32    # change here to 16 for 512x512 model
+    conf.sample_size = 16    # change here to 16 for 512x512 model
     conf.T_eval = 20
     conf.T = 1000
     conf.make_model_conf()
@@ -69,8 +65,8 @@ def default_autoenc(config):
     data_config = config.get('data', {})
     autoenc_config = config.get('autoenc_model', {})
 
-    conf.data_dirs = list(data_config.get('data_dirs', None))
-    conf.feature_dirs = list(data_config.get('feature_dirs', None))
+    conf.data_dirs = list(data_config.get('data_dirs', []))
+    conf.feature_dirs = list(data_config.get('feature_dirs', []))
     conf.feat_extractor = data_config.get('feature_extractor', None)
     #conf.test_patients_file_path = data_config.get('test_patients_file_path', None)
     #conf.process_only_zips = data_config.get('process_only_zips', False)
@@ -142,6 +138,7 @@ def texture100k_autoenc():
     conf.base_dir = 'checkpoints/texture100k'
     conf.warmup = 0
     conf.total_samples = 200_000_000
+    conf.sample_size = 32
     conf.img_size = 224
     conf.batch_size = 64
     conf.batch_size_eval = 64
@@ -162,7 +159,7 @@ def tcga_crc_autoenc():
     conf.warmup = 0
     conf.total_samples = 70_000_000
     conf.sample_size = 16
-    conf.img_size = 448
+    conf.img_size = 512
     conf.batch_size = 32
     conf.batch_size_eval = 32
     conf.net_ch = 128
@@ -201,6 +198,7 @@ def pancancer_autoenc():
     conf.base_dir = '/checkpoints/pancancer/autoenc'
     conf.warmup = 0
     conf.total_samples = 200_000_000
+    conf.sample_size = 32
     conf.img_size = 256
     conf.batch_size = 48  # had to reduce due to one broken gpu on dgx
     conf.batch_size_eval = 48  # had to reduce due to one broken gpu on dgx
