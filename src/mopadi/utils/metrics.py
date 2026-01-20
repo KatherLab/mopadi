@@ -92,7 +92,7 @@ def evaluate_lpips(
     val_loader = make_subset_loader(conf,
                                     dataset=val_data,
                                     batch_size=conf.batch_size_eval,
-                                    shuffle=False,
+                                    shuffle=False,  # ignored for WebDataset; shuffling happens inside the pipeline
                                     parallel=True)
 
     model.eval()
@@ -236,7 +236,7 @@ def evaluate_fid(
             val_loader = make_subset_loader(conf,
                                             dataset=val_data,
                                             batch_size=batch_size,
-                                            shuffle=True,
+                                            shuffle=False,  # Validation should not be shuffled
                                             parallel=True)
 
             i = 0

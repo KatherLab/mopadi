@@ -102,6 +102,7 @@ def default_autoenc(config):
     conf.net_ch = autoenc_config.get('net_ch', 128)
     conf.net_ch_mult = tuple(autoenc_config.get('net_ch_mult', (1, 1, 2, 2, 4, 4)))
     conf.net_enc_channel_mult = tuple(autoenc_config.get('net_enc_channel_mult', (1, 1, 2, 2, 4, 4, 4)))
+    conf.net_num_res_blocks = autoenc_config.get('net_num_res_blocks', 2)
     conf.eval_every_samples = autoenc_config.get('eval_every_samples', 1_000_000)
     conf.eval_ema_every_samples = autoenc_config.get('eval_ema_every_samples', 1_000_000)
 
