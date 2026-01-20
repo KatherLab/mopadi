@@ -17,7 +17,7 @@ evals/
 *.csv
 src/mopadi/utils/dimred/
 src/mopadi/utils/extract-old/
-notebooks/dev/*
+notebooks/dev*/*
 notebooks/rev*
 src/mopadi/utils/reconstruct_1k_images_*.py
 **/extval_classifier_*.py

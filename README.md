@@ -2,8 +2,10 @@
 
 MoPaDi combines [Diffusion Autoencoders](https://openaccess.thecvf.com/content/CVPR2022/html/Preechakul_Diffusion_Autoencoders_Toward_a_Meaningful_and_Decodable_Representation_CVPR_2022_paper.html) with multiple instance learning (MIL) for explainability of deep learning classifiers in histopathology. 
 
-> [!IMPORTANT] 
-> This repository contains an updated version of the codebase. For the experiments described in the [preprint](https://www.biorxiv.org/content/10.1101/2024.10.29.620913v1), please refer to [version 0.0.1 of MoPaDi](https://github.com/KatherLab/mopadi/tree/v0.0.1).
+> [!IMPORTANT]
+> Newest [preprint](https://www.biorxiv.org/content/10.1101/2024.10.29.620913v4) version.
+> 
+> This repository is being actively improved and contains an updated version of the codebase. For the frozen implementation corresponding to the initial [preprint](https://www.biorxiv.org/content/10.1101/2024.10.29.620913v1), please refer to [version 0.0.1 of MoPaDi](https://github.com/KatherLab/mopadi/tree/v0.0.1).
 
 For segmentation of 6 cell types to quantify changes in original and counterfactual images, [DeepCMorph](https://github.com/aiff22/DeepCMorph) pretrained models were used.
 
@@ -108,7 +110,7 @@ You can check if you are already logged in by running:
 huggingface-cli whoami
 ```
 
-Examples of counterfactual images generated with corresponding models (please refer to the [preprint](https://www.biorxiv.org/content/10.1101/2024.10.29.620913v1) for more examples):
+Examples of counterfactual images generated with corresponding models (please refer to the [preprint](https://www.biorxiv.org/content/10.1101/2024.10.29.620913v4) for more examples):
 ![image info](./images/models.png)
 
 ## Datasets
@@ -121,17 +123,17 @@ Examples of counterfactual images generated with corresponding models (please re
 This project was built upon a [DiffAE](https://github.com/phizaz/diffae) (MIT license) repository. We thank the developers for making their code open source.
 
 ## Reference
-If you find our work useful for your research or if you use parts of the code please consider citing our [preprint](https://www.biorxiv.org/content/10.1101/2024.10.29.620913v1):
+If you find our work useful for your research or if you use parts of the code please consider citing our [preprint](https://www.biorxiv.org/content/10.1101/2024.10.29.620913v4):
 
-> Žigutytė, L., Lenz, T., Han, T., Hewitt, K. J., Reitsam, N. G., Foersch, S., Carrero, Z. I., Unger, M., Pearson, T. A., Truhn, D. & Kather, J. N. (2024). Counterfactual Diffusion Models for Mechanistic Explainability of Artificial Intelligence Models in Pathology. bioRxiv, 2024.
+> Žigutytė, L., Lenz, T., Han, T., Hewitt, K. J., Reitsam, N. G., Foersch, S., Carrero, Z. I., Unger, M., Pearson, T. A., Truhn, D. & Kather, J. N. (2025). Counterfactual Diffusion Models for Interpretable Explanations of Artificial Intelligence Models in Pathology. bioRxiv, 2025.
 
 ```
 @misc{zigutyte2024mopadi,
-      title={ounterfactual Diffusion Models for Mechanistic Explainability of Artificial Intelligence Models in Pathology}, 
-      author={Laura Žigutytė and Tim Lenz and Tianyu Han and Katherine Jane Hewitt and Nic Gabriel Reitsam and Sebastian Foersch and Zunamys I Carrero and Michaela Unger and Alexander T Pearson and Daniel Truhn and Jakob Nikolas Kather},
-      year={2024},
+      title={Counterfactual Diffusion Models for Interpretable Explanations of Artificial Intelligence Models in Pathology}, 
+      author={Laura Zigutyte and Tim Lenz and Tianyu Han and Katherine Jane Hewitt and Nic Gabriel Reitsam and Sebastian Foersch and Zunamys I Carrero and Michaela Unger and Alexander T Pearson and Daniel Truhn and Jakob Nikolas Kather},
+      year={2025},
       eprint={2024.10.29.620913},
       archivePrefix={bioRxiv},
-      url={https://www.biorxiv.org/content/10.1101/2024.10.29.620913v1}, 
+      url={https://www.biorxiv.org/content/10.1101/2024.10.29.620913v4}, 
 }
 ```
