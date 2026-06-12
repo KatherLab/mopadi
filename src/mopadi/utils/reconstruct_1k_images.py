@@ -1,18 +1,18 @@
 import os
-from configs.templates import *
-from encode import *
 import numpy as np
 import random
 from datetime import datetime
 import matplotlib.pyplot as plt
 import pandas as pd
-import encode
 import cv2
 from skimage.metrics import structural_similarity
 from skimage.metrics import mean_squared_error
 from torchmetrics.image import MultiScaleStructuralSimilarityIndexMeasure
 from PIL import Image, ImageChops
 from dotenv import load_dotenv
+
+from mopadi.configs.templates import *
+from mopadi.utils.encode import *
 
 load_dotenv()
 ws_path = os.getenv("WORKSPACE_PATH")
