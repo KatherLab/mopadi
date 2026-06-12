@@ -9,6 +9,7 @@ import pandas as pd
 import openslide
 from openslide import open_slide
 from shapely.validation import make_valid
+from shapely.ops import polygonize, unary_union
 import traceback
 import logging
 import h5py
@@ -116,22 +117,32 @@ def read_annotations(annon_path):
             [min(coord[1] for coord in roi_coords), max(coord[1] for coord in roi_coords)]
         ])
 
+    fixed_polygons = []
     for polygon in polygons:
-        # remove invalid polygons and apply buffer
-        if isinstance(polygon, sg.Polygon):
-            if contains_nan_or_inf(polygon):
-                polygon = fix_invalid_polygon(polygon)
-                print("Invalid polygon was fixed.")
-            # try to catch possible topology exceptions, e.g. due to polygon intersecting with itself
-            if not polygon.is_valid:
-                polygon = polygon.buffer(0)
-                print("Invalid polygon was fixed.")
-            if not polygon.is_valid:
+        if not isinstance(polygon, sg.Polygon):
+            continue
+        if contains_nan_or_inf(polygon):
+            polygon = fix_invalid_polygon(polygon)
+        if not polygon.is_valid:
+            # polygonize recovers all sub-regions formed by a self-intersecting ring,
+            # which make_valid/buffer(0) miss because they only keep one winding region
+            ring = polygon.exterior
+            noded = ring.union(sg.GeometryCollection())
+            parts = list(polygonize(noded))
+            if parts:
+                polygon = unary_union(parts)
+                print("Invalid polygon was fixed using polygonize.")
+            else:
                 polygon = make_valid(polygon)
                 print("Invalid polygon was fixed using make_valid.")
+        # flatten: fixed result may be Polygon, MultiPolygon, or GeometryCollection
+        if isinstance(polygon, sg.Polygon):
+            fixed_polygons.append(polygon)
+        elif hasattr(polygon, 'geoms'):
+            fixed_polygons.extend(g for g in polygon.geoms if isinstance(g, sg.Polygon))
 
     # Combine the individual polygons into a single MultiPolygon object
-    annPolys = sg.MultiPolygon(polygons)
+    annPolys = sg.MultiPolygon(fixed_polygons)
 
     return annPolys, np.int32(rectcoords_list)
 
