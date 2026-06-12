@@ -46,7 +46,7 @@ def default_mil_conf(config):
     conf = MILconfig()
 
     data_config = config.get('data', {})
-    conf.data_dirs = list(data_config.get('data_dirs', None))
+    conf.data_dirs = list(data_config.get('data_dirs', []))
     conf.test_patients_file_path = data_config.get('test_patients_file_path', None)
     conf.split = data_config.get('split', 'none')
     conf.max_tiles_per_patient = data_config.get('max_tiles_per_patient', None)
@@ -70,6 +70,7 @@ def default_mil_conf(config):
     conf.fname_index = mil_config.get('fname_index', 3)
     conf.feat_path = mil_config.get('feat_path_train', None)
     conf.feat_path_test = mil_config.get('feat_path_test', None)
+    conf.slide_table = mil_config.get('slide_table', None)
     conf.clini_table = mil_config.get('clini_table', None)
     conf.out_dir = os.path.join(conf.base_dir, 'mil_classifier_' + conf.target_label)
     
@@ -78,6 +79,7 @@ def default_mil_conf(config):
     conf.patients = mil_config.get('patients', None)
     conf.filename = mil_config.get('filename', None)
     conf.nr_top_tiles = mil_config.get('nr_top_tiles', 5)
+    conf.tile_selection = mil_config.get('tile_selection', 'top')
 
     conf.use_pretrained = mil_config.get('use_pretrained', False)
     conf.pretrained_autoenc_name = mil_config.get('pretrained_autoenc_name', None)

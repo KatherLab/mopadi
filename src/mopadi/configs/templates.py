@@ -81,7 +81,7 @@ def default_autoenc(config):
     conf.do_normalize = data_config.get('do_normalize', True)
     conf.do_resize = data_config.get('do_resize', False)
 
-    conf.img_size = autoenc_config.get('img_size', 224)
+    conf.img_size = data_config.get('img_size', 224)
     conf.batch_size = autoenc_config.get('batch_size', 64)
     conf.batch_size_eval = autoenc_config.get('batch_size_eval', 64)
     conf.total_samples = autoenc_config.get('total_samples', 200_000_000)

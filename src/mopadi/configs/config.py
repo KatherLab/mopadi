@@ -38,6 +38,7 @@ class MILconfig(BaseConfig):
     num_classes: int = 2
     nr_feats: int = 512
     nr_top_tiles: int = 15
+    tile_selection: str = 'top'  # 'top' or 'mid'
     num_epochs: int = 300
     lr: float = 1e-4
     batch_size: int = 16
