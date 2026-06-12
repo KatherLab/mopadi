@@ -75,16 +75,28 @@ class FeatDataset(Dataset):
                 self.df = pd.read_csv(annot_file,sep="\t")
             elif annot_file.endswith(".xlsx"):
                 self.df = pd.read_excel(annot_file)
-            else:    
+            else:
                 self.df = pd.read_csv(annot_file)
         except Exception:
             self.df = pd.read_excel(annot_file)
         self.df['PATIENT'] = self.df['PATIENT'].apply(lambda patient: "-".join(patient.split("-")[:fname_index]))
 
+        # Support slide df with PATIENT and FILENAME columns, or a plain list of paths
+        if isinstance(feat_list, pd.DataFrame):
+            self.path_to_patient = dict(zip(feat_list['FILENAME'], feat_list['PATIENT']))
+            all_paths = feat_list['FILENAME'].tolist()
+        else:
+            self.path_to_patient = None
+            all_paths = feat_list
+
         valid_feat_list = []
         skipped = 0
-        for path in feat_list:
-            pat = "-".join(path.split("/")[-1].split(".h5")[0].split("-")[:fname_index])
+        for path in all_paths:
+            if not os.path.exists(path):
+                print(f"Skipping {path}: file not found.")
+                skipped += 1
+                continue
+            pat = self._get_patient(path)
             if pat in self.df.PATIENT.values:
                 row = self.df[self.df.PATIENT == pat]
                 if not row[self.target_label].isna().values[0]:
@@ -95,9 +107,14 @@ class FeatDataset(Dataset):
             else:
                 print(f"Skipping patient {pat}: not found in annotation file.")
                 skipped += 1
-        print( f"Total skipped patients: {skipped} out of {len(feat_list)}")
+        print( f"Total skipped files: {skipped} out of {len(all_paths)}")
         self.feat_list = valid_feat_list
         self.indices = indices if indices is not None else list(range(len(self.feat_list)))
+
+    def _get_patient(self, path):
+        if self.path_to_patient is not None:
+            return self.path_to_patient[path]
+        return "-".join(path.split("/")[-1].split(".h5")[0].split("-")[:self.fname_index])
 
     def __len__(self):
         return len(self.indices)
@@ -105,7 +122,7 @@ class FeatDataset(Dataset):
     def get_targets(self, indices=None):
         indices = indices if indices is not None else self.indices
         return [
-            self.target_dict[self.df[self.df.PATIENT == ("-").join(self.feat_list[i].split("/")[-1].split(".h5")[0].split("-")[:self.fname_index])][self.target_label].values[0]]
+            self.target_dict[self.df[self.df.PATIENT == self._get_patient(self.feat_list[i])][self.target_label].values[0]]
                 for i in indices]
 
     def get_nr_pos(self, indices=None):
@@ -126,15 +143,14 @@ class FeatDataset(Dataset):
         return np.sum(targets == 0)
 
     def get_patient_ids(self):
-        return [self.df[self.df.PATIENT == "-".join(feat_path.split("/")[-1].split(".h5")[0].split("-")[:self.fname_index])].PATIENT.values[0]
-                    for feat_path in self.feat_list]
-                    
+        return [self._get_patient(feat_path) for feat_path in self.feat_list]
+
     def __getitem__(self, idx):
         actual_idx = self.indices[idx]
-        if idx >= len(self.indices):    
+        if idx >= len(self.indices):
             raise IndexError(f"Index {idx} out of bounds for indices of size {len(self.indices)}")
         feat_path = self.feat_list[actual_idx]
-        pat = "-".join(feat_path.split("/")[-1].split(".h5")[0].split("-")[:self.fname_index])
+        pat = self._get_patient(feat_path)
         target = self.target_dict[self.df[self.df.PATIENT==pat][self.target_label].values[0]]
         #feats = torch.from_numpy(h5py.File(feat_path)["feats"][:])
         with h5py.File(feat_path, "r") as h5_file:
@@ -210,8 +226,25 @@ def save_image(image_tensor, save_path):
     
 def get_top_tiles(model, feats, k=15, cls_id=1, device='cuda:0'):
     unsq = feats.squeeze(0).unsqueeze(1).to(device)
-    scores = F.softmax(model(unsq),dim=1)
-    return  scores[:, cls_id].topk(k).indices
+    scores = F.softmax(model(unsq), dim=1)
+    return scores[:, cls_id].topk(k).indices
+
+
+def get_mid_tiles(model, feats, k=15, cls_id=1, device='cuda:0'):
+    unsq = feats.squeeze(0).unsqueeze(1).to(device)
+    scores = F.softmax(model(unsq), dim=1)[:, cls_id]
+    sorted_indices = torch.argsort(scores)
+    mid = len(sorted_indices) // 2
+    half_k = k // 2
+    start = max(0, mid - half_k)
+    end = min(len(sorted_indices), start + k)
+    return sorted_indices[start:end]
+
+def get_borderline_tiles(model, feats, k=15, cls_id=1, device='cuda:0'):
+    unsq = feats.squeeze(0).unsqueeze(1).to(device)
+    scores = F.softmax(model(unsq), dim=1)[:, cls_id]
+    boundary_dist = torch.abs(scores - 0.5)
+    return boundary_dist.topk(k, largest=False).indices
 
 def train_mil(model,
           train_set,
@@ -455,6 +488,13 @@ def test(model, loader_dict, target_label, out_dir, positive_weights):
     test_df = pd.DataFrame(pred_dict)
     test_df.to_csv(f"{out_dir}/PMA_mil_preds_test.csv",index=False)
 
+    # Patient-level aggregation (mean of slide predictions)
+    pat_df = test_df.groupby("pat_ids").agg({"preds": "mean", target_label: "first"}).reset_index()
+    pat_df.to_csv(f"{out_dir}/PMA_mil_preds_patient.csv", index=False)
+    pat_auroc = roc_auc_score(pat_df[target_label], pat_df["preds"])
+    tqdm.write(f"Patient-level AUROC: {pat_auroc:.4f} (N={len(pat_df)} patients)")
+    pat_fpr, pat_tpr, _ = roc_curve(pat_df[target_label], pat_df["preds"])
+
     # Calculate AUROC
     test_auroc = roc_auc_score(all_targets, all_predicted_probs)
     aurocs.append(test_auroc)
@@ -462,22 +502,28 @@ def test(model, loader_dict, target_label, out_dir, positive_weights):
     fpr, tpr, _ = roc_curve(all_targets, all_predicted_probs)
 
     precision, recall, _ = precision_recall_curve(all_targets, all_predicted_probs)
-    
+
     fig_roc = plt.figure(figsize=(10, 8))
     ax_roc = fig_roc.add_subplot(111)
 
     colormap=cm.acton_r
     color = colormap(0.5)
+    pat_color = colormap(0.2)
 
     fig_prc = plt.figure(figsize=(10, 8))
     ax_prc = fig_prc.add_subplot(111)
-    ax_prc.set_title("Precision-Recall Curve", fontsize=16) 
+    ax_prc.set_title("Precision-Recall Curve", fontsize=16)
 
-    ax_roc.plot(fpr, tpr, label=f"AUC={test_auroc:.3f}", color=color)
+    ax_roc.plot(fpr, tpr, label=f"Slide AUC={test_auroc:.3f}", color=color)
+    ax_roc.plot(pat_fpr, pat_tpr, label=f"Patient AUC={pat_auroc:.3f}", color=pat_color, linestyle="--")
 
     ax_prc.plot(recall,precision,label=f"PRC")
 
-    tqdm.write(f"Test loss: {test_loss_avg:.4f}, Test Acc: {test_accuracy*100:.2f}, AUROC: {test_auroc:.4f}")
+    tqdm.write(f"Test loss: {test_loss_avg:.4f}, Test Acc: {test_accuracy*100:.2f}, Slide AUROC: {test_auroc:.4f}, Patient AUROC: {pat_auroc:.4f}")
+
+    import json
+    with open(f"{out_dir}/auroc.json", "w") as fp:
+        json.dump({"slide_auroc": test_auroc, "patient_auroc": pat_auroc}, fp, indent=2)
 
     ax_roc.legend(loc="lower right", bbox_to_anchor=(0.97, 0.03), prop={'size': 24})
     fig_prc.legend(loc="lower right", bbox_to_anchor=(0.97, 0.03), prop={'size': 24})
@@ -492,7 +538,7 @@ def test(model, loader_dict, target_label, out_dir, positive_weights):
     ax_roc.set_xlabel('False Positive Rate', fontproperties=my_font, fontsize=24)
     ax_roc.set_ylabel('True Positive Rate', fontproperties=my_font, fontsize=24)
     ax_roc.set_aspect("equal")
-    ax_roc.set_title(f'AUC = {np.mean(aurocs):.3f}$\pm${np.std(aurocs):.3f}', fontsize=28)
+    ax_roc.set_title(f'Slide AUC={test_auroc:.3f} | Patient AUC={pat_auroc:.3f}', fontsize=22)
 
     fig_roc.savefig(f"{out_dir}/ROC-mil-{target_label}.png", dpi=300)
     fig_roc.savefig(f"{out_dir}/ROC-mil-{target_label}.svg")
