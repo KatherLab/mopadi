@@ -21,6 +21,24 @@ def get_top_tiles(model, feats, k=5, cls_id=1, device='cuda:0'):
 
     return top_indices, top_scores
 
+
+def get_mid_tiles(model, feats, k=5, cls_id=1, device='cuda:0'):
+    unsq = feats.squeeze(0).unsqueeze(1).to(device)
+    scores = F.softmax(model(unsq), dim=1)[:, cls_id]  # (N,)
+    try:
+        sorted_indices = torch.argsort(scores)  # ascending
+        mid = len(sorted_indices) // 2
+        half_k = k // 2
+        start = max(0, mid - half_k)
+        end = min(len(sorted_indices), start + k)
+        mid_indices = sorted_indices[start:end]
+        mid_scores = scores[mid_indices]
+    except Exception as e:
+        print(e)
+        return None, None
+
+    return mid_indices, mid_scores
+
 def save_image(image_tensor, save_path):
     image = transforms.ToPILImage()(image_tensor.cpu().squeeze(0))
     image.save(save_path)

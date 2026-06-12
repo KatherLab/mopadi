@@ -189,13 +189,13 @@ class ImageManipulator:
 
 
     def manipulate_patients_images(
-                        self, 
-                        patient_name=None, 
+                        self,
+                        patient_name=None,
                         patient_features=None,
                         metadata=None,
-                        save_path=os.path.join(os.getcwd(), "results"), 
-                        man_amps=[0.1, 0.2, 0.3], 
-                        T_step=100, 
+                        save_path=os.path.join(os.getcwd(), "results"),
+                        man_amps=[0.1, 0.2, 0.3],
+                        T_step=100,
                         T_inv=200,
                         patient_class=None,
                         target_dict=None,
@@ -203,6 +203,7 @@ class ImageManipulator:
                         num_top_tiles=15,
                         filename=None,
                         manip_tiles_separately=True,
+                        tile_selection='top',  # 'top' or 'mid'
                         ):
         
         if target_class is None:
@@ -210,8 +211,14 @@ class ImageManipulator:
         target_cls_id = target_dict[target_class]
 
         try:
-            top_tiles = get_top_tiles(model=self.classifier, feats=patient_features, k=num_top_tiles, cls_id=target_dict[patient_class], device=self.device)
-            print(f"Top {num_top_tiles} tiles obtained for manipulation.")
+            if tile_selection == 'mid':
+                _tile_fn = get_mid_tiles
+            elif tile_selection == 'borderline':
+                _tile_fn = get_borderline_tiles
+            else:
+                _tile_fn = get_top_tiles
+            top_tiles = _tile_fn(model=self.classifier, feats=patient_features, k=num_top_tiles, cls_id=target_dict[patient_class], device=self.device)
+            print(f"{tile_selection.capitalize()} {num_top_tiles} tiles obtained for manipulation.")
         except Exception as e:
             print(f"Exception occured while getting top tiles: {e}")
             return

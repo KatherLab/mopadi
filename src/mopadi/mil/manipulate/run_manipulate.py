@@ -186,5 +186,6 @@ def run_manipulate(config):
                             target_dict=conf.target_dict,
                             num_top_tiles=conf.nr_top_tiles,
                             filename=conf.filename,
-                            manip_tiles_separately=True
+                            manip_tiles_separately=True,
+                            tile_selection=getattr(conf, 'tile_selection', 'top')
                             )
